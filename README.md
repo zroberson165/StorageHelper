@@ -1,0 +1,216 @@
+# Storage Helper
+
+A **client-side Fabric mod for Minecraft Java Edition 26.3** that makes chest storage easier:
+
+| Feature | What it does |
+|---|---|
+| **Deposit Matching** | One click moves every item type that is already in the chest from your inventory and hotbar into it (partial stacks topped up first, then empty slots; overflow stays with you). |
+| **Sort** | Physically rearranges the chest contents (never your inventory) either **A-Z** or **By Type**, consolidating partial stacks. The result persists because the items really move. |
+| **Search** | A search box highlights matching chest slots live as you type (names and registry ids, case-insensitive), with a match counter and a clear button. |
+
+It works in single-player and on ordinary vanilla/Paper/Fabric servers **without** being installed on the server: every change is made through normal, server-validated inventory clicks, exactly as if you had clicked the slots yourself.
+
+Supported containers: regular single and double chests, including trapped chests and the copper chest variants (anything built on the vanilla chest block). Barrels, ender chests, shulker boxes, furnaces, crafting tables, merchants and server-plugin menus are deliberately left alone.
+
+---
+
+## Requirements
+
+| Component | Version | Notes |
+|---|---|---|
+| Minecraft Java Edition | **26.3** | The mod declares `"minecraft": "~26.3"`. It is not built for other versions. |
+| Java | **JDK 25** | Required by Minecraft 26.3 itself (`javaVersion.majorVersion = 25` in Mojang's version manifest). |
+| Fabric Loader | **0.20.1** or newer | https://fabricmc.net/use/ |
+| Fabric API | **0.166.2+26.3** (any 26.3 build) | Required separately. The mod uses its Screen, Lifecycle and Interaction event modules. |
+| Gradle | 9.8.2 via the included wrapper | Nothing to install; `./gradlew` downloads it. |
+| Fabric Loom | 1.19.4 | Gradle plugin, pulled automatically. |
+
+These versions were checked on 2026-11-11 against Mojang's `piston-meta` manifest, `meta.fabricmc.net`, `maven.fabricmc.net` and the official `FabricMC/fabric-example-mod` `26.3` branch.
+
+---
+
+## Installation (playing)
+
+1. Install the Fabric Loader for Minecraft 26.3 with the official installer (https://fabricmc.net/use/installer/) and start the game once with the new "fabric-loader-26.3" profile so the `mods` folder is created.
+2. Download **Fabric API** for 26.3 (https://modrinth.com/mod/fabric-api or CurseForge) and put the jar in `mods`.
+3. Put `storagehelper-1.0.0.jar` (from `build/libs`, see below) in the same `mods` folder:
+   * macOS: `~/Library/Application Support/minecraft/mods`
+   * Windows: `%APPDATA%\.minecraft\mods`
+   * Linux: `~/.minecraft/mods`
+4. Launch the Fabric profile. Open any chest: the Storage Helper panel appears to the right of it.
+
+Only the client needs the mod. Servers do not need anything.
+
+Settings are stored in `config/storagehelper.json` (inside the game directory):
+
+```json
+{
+  "sortMode": "alphabetical",   // or "by_type"; also changed from the in-game selector
+  "clicksPerTick": 1,           // 1-5 inventory clicks per game tick while an operation runs
+  "dimNonMatching": true        // darken chest slots that do not match the search
+}
+```
+
+---
+
+## Building from source (macOS setup)
+
+```bash
+# 1. JDK 25 (any distribution). Homebrew example:
+brew install --cask temurin@25
+#    or use an existing install, e.g. /Library/Java/JavaVirtualMachines/jdk-25.jdk
+
+# 2. Point JAVA_HOME at it for this shell:
+export JAVA_HOME=$(/usr/libexec/java_home -v 25)
+
+# 3. Build (first run downloads Gradle, Loom, Minecraft 26.3 and Fabric API; a few minutes):
+cd StorageHelper
+./gradlew build
+```
+
+Outputs in `build/libs/`:
+
+* `storagehelper-1.0.0.jar` – **the distributable mod** (install this).
+* `storagehelper-1.0.0-sources.jar` – sources, not needed for playing.
+
+The build runs the unit tests (`./gradlew test` runs them alone). Reports land in `build/reports/tests/test/index.html`.
+
+### Development launch
+
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 25)
+./gradlew runClient          # starts Minecraft 26.3 with the mod from source
+./gradlew genSources         # decompiled Minecraft sources for your IDE
+```
+
+Import the folder as a Gradle project in IntelliJ IDEA or VS Code (Gradle for Java extension); Loom generates the run configurations.
+
+---
+
+## Using the panel
+
+The panel sits to the right of the chest (or to the left / hugging the screen edge when the window is too narrow) and re-positions itself on resize and GUI-scale changes.
+
+* **Deposit Matching** – moves matching items. Hover for a tooltip; matching hotbar items are included, armor/offhand/cursor are not. While it runs the button reads **Cancel**.
+* **Sort** – sorts the chest in the order shown on the selector below it. Reads **Cancel** while running.
+* **Order: A-Z / By Type** – click to toggle; the choice is saved.
+* **Search…** – type to highlight. `✕` clears. The counter shows "N matching" or "No matches". While the box is focused, keys go only to the box (no hotbar swaps, no `E` closing the chest); **Enter** or **Esc** leaves the box, a second **Esc** closes the chest. Clicking anywhere else also leaves the box.
+
+Both operations require an empty cursor and refuse to start while another one runs. Status messages appear under the search box.
+
+---
+
+## How it works
+
+### Main classes
+
+| Class | Role |
+|---|---|
+| `StorageHelperClient` | Client entrypoint. Loads config, registers the chest-click listener and the screen-init hook. |
+| `chest.ChestDetector` | Decides whether an opened 9x3 / 9x6 container is a real chest: vanilla chest title keys, or a chest block you just right-clicked with a matching size. |
+| `chest.ChestSession` / `ChestSessions` | One session per open chest screen: builds the widgets, owns the search state, runs the active operation each screen tick, and filters keyboard/mouse input. Closing the screen discards the session, so the query resets per chest. |
+| `chest.op.DepositOperation` | Deposit Matching as a queue of shift-clicks. |
+| `chest.op.SortOperation` | Sort as a stream of single left-clicks decided tick by tick. |
+| `chest.McStackType`, `ChestSnapshots`, `ItemFactsFactory`, `ClickOverrideDetector` | Adapters from live `ItemStack`s/`ChestMenu` to the game-agnostic planning model. |
+| `logic.SortPlanner`, `ClickSimulator`, `DepositPlanner`, `ItemClassifier`, `SearchMatcher`, `SortMode` | Pure logic with no Minecraft dependency; fully unit-tested. |
+| `gui.SlotHighlighter` + `mixin.AbstractContainerScreenMixin` | Draws the search outline/dim right after each slot's item is drawn (the only injecting mixin). `AbstractContainerScreenAccessor` just reads the GUI rectangle for panel placement. |
+
+### Deposit logic
+
+1. On click the chest's item **registry ids** are snapshotted. Every player slot (main inventory + hotbar, which are the only player slots a chest menu exposes) whose item id is in that set is queued.
+2. Each tick, up to `clicksPerTick` queued slots are **re-read**. A slot is skipped if it changed or if the chest has no room for that exact stack (no same-components partial stack and no empty slot). Otherwise it is **shift-clicked** (`QUICK_MOVE`), which is vanilla's own "fill compatible partial stacks first, then empty slots, leave the rest" behaviour, validated by the server. Components are never touched; only vanilla's stacking rules decide what merges.
+3. When the queue is empty the number of items that left your inventory is reported ("Deposited N items", "No room in the chest", or "Nothing to deposit").
+
+### Sort logic
+
+1. The chest contents are reduced to `(type, count)` pairs where *type* means item **plus all components** (vanilla's `isSameItemSameComponents`), so a renamed or enchanted stack never merges with a plain one.
+2. A **target layout** is computed: totals per type → full stacks plus at most one remainder → types ordered by the chosen mode → packed left-to-right with empty slots last. Alphabetical compares the displayed name case-insensitively, then the exact name, registry id and a component tie-breaker, so the result is deterministic. By Type orders by category first: tools & weapons, armor, ores & minerals, food & drinks, blocks, redstone & mechanisms, misc. Categories come from data components (`tool`, `weapon`, `equippable`, `food`, `consumable`), item tags (vanilla and `c:` convention tags when present) and registry-id keywords as a fallback for modded items. Ore blocks count as ores; redstone dust/blocks and mechanisms count as redstone even though they are blocks.
+3. The planner is **stateless**: each tick it re-reads the live slots and cursor and derives the next left-click. Positions are finalised left to right. For position *p*: if the cursor holds the right type, click *p* (place, top up, or swap out whatever is there); if the cursor is empty, pick up a donor stack of the right type from a later slot; if the cursor holds something else, click a donor slot so vanilla swaps them. Every click either fills *p* further or completes it, so it terminates, **needs no free slot in the chest or your inventory**, consolidates partial stacks as a side effect, and ends with an empty cursor because the target contains exactly the chest's items. A simulator models vanilla's left-click rules and is used both in tests and as a no-op guard at runtime.
+4. **Bundles** (and any modded item that overrides click-on-stack behaviour) are special: left-clicking them onto an item puts the item inside the bundle. The planner never clicks such a stack onto an occupied slot or vice versa; it parks the cursor in an empty slot first. For a *completely full* chest that contains bundles it first consolidates ordinary partial stacks to free a slot, and if that is impossible it refuses up front ("Bundles need one empty chest slot to sort").
+
+### Search logic
+
+The normalised query is matched as a substring of each chest stack's displayed name and of its registry id (`minecraft:ender_pearl`). Matches are recomputed every tick and on every keystroke; the mixin only reads a boolean per slot and draws. Nothing is moved, hidden or filtered. Player-inventory slots are never highlighted.
+
+### Synchronisation and safety
+
+* All clicks go through `MultiPlayerGameMode.handleContainerInput` with the active menu's container id, the same path as a real mouse click, so the server validates each one and the client applies its usual prediction. No packets are forged and the server needs no mod.
+* Pacing is tick-based: default **1 click per tick** (configurable up to 5), never a burst.
+* Before every click the live slot/cursor state is re-read. Deposit skips slots that changed; Sort derives each click from the live state and, if the contents no longer add up to the target (another player added or removed items, a server correction arrived), recomputes the target (bounded number of times) or stops with a message. After the layout matches, Sort waits a few ticks and **re-verifies** so late server corrections are caught.
+* Operations require an empty cursor to start, block slot clicks / hotbar keys while running, cannot be started twice, and each completes with an empty cursor.
+* **Interrupted operations:** pressing **Cancel** sets a flag; Sort first returns the stack on the cursor to the chest (same-type partial stack, else an empty slot, which always exists while the cursor holds chest items) and only then stops. Deposit stops before its next click. If the screen is closed mid-operation (Esc, `E`, death, server closing the menu, container replaced), the session is discarded and no further clicks are sent; whatever is on the cursor is handled by vanilla's own container-close logic (returned to your inventory). Nothing is ever clicked "outside" the window, so nothing is dropped.
+* **Full-chest sorting:** handled by the cursor-swap strategy above; no empty slot is needed except for the bundle case described earlier.
+* Item counts and components are preserved by construction: every move is a vanilla pick-up, place, merge or swap on the server.
+
+---
+
+## Testing
+
+### Automated (run on every build)
+
+`./gradlew test` – 25 JUnit 5 tests over the pure logic, including a 600-case randomized sort fuzz (single and double chests, full and partly empty, mixed stack sizes, unstackables with differing components, bundles) that checks: termination within a click bound, no no-op clicks, no bundle-vs-occupied click, item totals unchanged, cursor empty at the end, final layout equal to the target; plus deposit candidate/room rules, category precedence, search matching, and ordering determinism.
+
+What the automated tests **do not** cover: anything that needs the game (rendering, input routing, real server validation, timing).
+
+### Automated in-game test (drives the real game)
+
+`src/gametest` contains a Fabric **client gametest** (`StorageHelperGameTest`). It launches the actual Minecraft 26.3 client, creates a flat world, places and fills a chest with commands, right-clicks the chest like a player, and then:
+
+1. checks the panel attached (this also proves both mixins applied, since the panel layout reads the GUI position through the accessor and the chest screen class is loaded);
+2. presses **Deposit Matching** and verifies the *server-side* chest afterwards (cobblestone 40+40+64 → 64/64/16 with partial stacks topped up first, dirt merged, the non-matching stick left in the hotbar);
+3. presses **Sort** in A-Z and then By Type and verifies the exact server-side slot layout and unchanged totals;
+4. clicks into the search box, types `COBB`, verifies three highlighted slots, then presses the hotbar-1 key and the inventory key while hovering a chest slot and verifies nothing moved and the chest stayed open;
+5. verifies Esc unfocuses first, the clear button resets the search, a second Esc closes the chest, and item totals are intact.
+
+Screenshots are written to `build/run/clientGameTest/screenshots/`.
+
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 25)
+./gradlew runClientGameTest -PclientGameTests=true   # opens a game window; takes about a minute
+```
+
+It is opt-in (`-PclientGameTests=true`) so a normal `./gradlew build` never launches the game.
+
+**Result on 2026-11-11 (macOS, JDK 25, Minecraft 26.3, Fabric Loader 0.20.1, Fabric API 0.166.2+26.3):** the game test passed end to end. Server-side chest contents matched the expected layouts after deposit, A-Z sort and By Type sort; the panel, highlight and status labels rendered as expected in the captured screenshots.
+
+What is **not** covered automatically: multiplayer with a second player editing the chest, servers with inventory restrictions, GUI-scale/resize behaviour, bundles in-game, and visual polish. Please run through the checklist below for those.
+
+### In-game checklist
+
+Deposit
+- [ ] Chest with a partial cobblestone stack, 2 cobblestone stacks in inventory → chest stack tops up first, then empty slots used.
+- [ ] Chest with only a *full* cobblestone stack + empty slots → inventory cobblestone still deposited into empty slots.
+- [ ] Chest full for that type → nothing moves, message "No room in the chest".
+- [ ] Mixed inventory → non-matching items untouched; hotbar matches included; armor/offhand untouched.
+- [ ] Renamed/enchanted/damaged variants: deposited (same id) but never merged into a plain stack; components intact afterwards.
+- [ ] Overflow stays in inventory and is reported correctly.
+- [ ] Item on cursor → refuses with message. Click twice quickly → only one run.
+
+Sort
+- [ ] A-Z and By Type on single and double chests, partially empty and completely full (no empty slot).
+- [ ] Partial stacks consolidated; empties at the end; close and reopen: order persists.
+- [ ] Unstackable items (tools, armor) with different enchantments/names/durability: all kept, deterministic order; counts/components unchanged (compare before/after screenshots or use F3+H).
+- [ ] Player inventory never changes.
+- [ ] Chest containing bundles with ≥1 empty slot sorts; completely full chest with bundles and nothing to consolidate is refused with the bundle message.
+- [ ] Cancel mid-sort → cursor ends empty, items all still in chest.
+- [ ] Close the chest (Esc) mid-sort → no item loss; held stack returned to inventory by vanilla.
+- [ ] Multiplayer: second player adds/removes items during a sort → operation re-plans or stops with "Chest kept changing", never duplicates/deletes.
+- [ ] Server with inventory restrictions (e.g. a protected chest): clicks are rejected by the server; mod stops cleanly.
+
+Search
+- [ ] Mixed case, partial names ("cobb"), registry ids ("ender_pearl", "minecraft:"), custom names.
+- [ ] Empty query → normal rendering; no matches → "No matches"; counter correct.
+- [ ] Highlight keeps item and count readable; player inventory not highlighted; `✕` clears.
+- [ ] Typing digits/E/Q while focused does nothing to the inventory; Esc/Enter unfocus; second Esc closes.
+- [ ] Open a different chest → query is empty.
+
+Interface
+- [ ] GUI scale 1–4 and Auto, window resize/fullscreen toggle: panel stays visible and re-positions (right, then left, then edge).
+- [ ] Normal clicks, shift-clicks, drag-splitting and tooltips still work when nothing is running; blocked while an operation runs.
+- [ ] Panel absent on furnace, crafting table, barrel, ender chest, shulker box, villager, anvil and plugin menus.
+
+---
+
+## License
+
+MIT – see `LICENSE`.

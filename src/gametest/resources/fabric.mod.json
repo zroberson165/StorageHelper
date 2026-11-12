@@ -1,0 +1,17 @@
+{
+	"schemaVersion": 1,
+	"id": "storagehelper-gametest",
+	"version": "1.0.0",
+	"name": "Storage Helper Game Tests",
+	"environment": "client",
+	"license": "MIT",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.storagehelper.gametest.StorageHelperGameTest"
+		]
+	},
+	"depends": {
+		"storagehelper": "*",
+		"fabric-client-gametest-api-v1": "*"
+	}
+}

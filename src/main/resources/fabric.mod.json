@@ -1,0 +1,27 @@
+{
+	"schemaVersion": 1,
+	"id": "storagehelper",
+	"version": "${version}",
+	"name": "Storage Helper",
+	"description": "Deposit matching items, sort chests, and search chest contents with highlights. Client-side only.",
+	"authors": ["Storage Helper contributors"],
+	"contact": {},
+	"license": "MIT",
+	"icon": "assets/storagehelper/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["com.storagehelper.StorageHelperClient"]
+	},
+	"mixins": [
+		{
+			"config": "storagehelper.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
