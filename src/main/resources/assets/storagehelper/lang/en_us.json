@@ -31,7 +31,7 @@
 	"storagehelper.status.sort.too_many": "Stopped after too many moves",
 	"storagehelper.status.sort.no_fit": "Stopped: items no longer fit",
 	"storagehelper.status.sort.bundles_full": "Bundles need one empty chest slot to sort",
-	"storagehelper.scroll.controls": "Shift + scroll up over your inventory: deposit one item per step. Shift + scroll down over the container: withdraw one. Other directions do nothing.",
+	"storagehelper.scroll.controls": "Shift + scroll up over your inventory to deposit; down over the container to withdraw. Proportional batches (default: 8 items per wheel unit). Other directions do nothing.",
 	"storagehelper.scroll.running": "Transferring…",
 	"storagehelper.scroll.done": "Transfer complete",
 	"storagehelper.scroll.full": "Destination cannot accept this item",

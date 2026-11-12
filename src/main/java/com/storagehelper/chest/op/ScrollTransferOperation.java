@@ -1,6 +1,9 @@
 package com.storagehelper.chest.op;
 
 import com.storagehelper.chest.ChestSnapshots;
+import com.storagehelper.chest.McStackType;
+import com.storagehelper.logic.BatchTransferPlanner;
+import com.storagehelper.logic.ScrollAccumulator;
 import com.storagehelper.logic.TransferRequests;
 import com.storagehelper.logic.SingleItemTransferPlanner;
 import com.storagehelper.logic.Stack;
@@ -8,24 +11,22 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
-import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import java.util.ArrayList;
 import java.util.List;
 
-/** A bounded queue of one-item transactions: pick up, place one, return remainder.
- * Every intermediate cursor and slot state must equal the last predicted result. */
+/** Quantity batches use vanilla whole-stack moves, half-stack pickup, and capped merges.
+ * Only the unfinished batch owns the cursor; queued batches expire independently. */
 public final class ScrollTransferOperation extends ChestOperation {
     private final int source;
     private final boolean intoContainer;
     private final ItemStack original;
     private final List<Integer> destinations = new ArrayList<>();
     private final TransferRequests requests = new TransferRequests();
-    private int phase;
-    private int destination;
-    private ItemStack expectedSource = ItemStack.EMPTY;
+    private List<ItemStack> expectedSlots;
     private ItemStack expectedCursor = ItemStack.EMPTY;
-    private ItemStack expectedDestination = ItemStack.EMPTY;
+    private int activeRemaining;
+    private long lastInput;
     private int recoveryTicks;
 
     public ScrollTransferOperation(Minecraft mc, AbstractContainerMenu menu, int source, boolean intoContainer, int count, int pacing) {
@@ -38,70 +39,105 @@ public final class ScrollTransferOperation extends ChestOperation {
         for (int i = intoContainer ? 0 : boundary; i < (intoContainer ? boundary : menu.slots.size()); i++) destinations.add(i);
     }
     public int source() { return source; }
-    public void enqueue(int count) { requests.add(count); }
+    public void enqueue(int count) {
+        if (!cancelRequested) { requests.add(count); lastInput = System.currentTimeMillis(); }
+    }
     @Override public Component runningLabel() { return t("scroll.running"); }
     @Override public void start() {
-        if (!cursorEmpty()) finish(t("status.cursor_not_empty"));
-        if (original.isEmpty()) finish(t("status.stopped"));
+        if (!cursorEmpty()) { finish(t("status.cursor_not_empty")); return; }
+        if (original.isEmpty()) { finish(t("status.stopped")); return; }
+        remember();
+    }
+    private void remember() {
+        expectedSlots = menu.slots.stream().map(slot -> slot.getItem().copy()).toList();
+        expectedCursor = menu.getCarried().copy();
+    }
+    private boolean unchanged() {
+        if (!ItemStack.matches(expectedCursor, menu.getCarried())) return false;
+        for (int i = 0; i < expectedSlots.size(); i++)
+            if (!ItemStack.matches(expectedSlots.get(i), menu.getSlot(i).getItem())) return false;
+        return true;
+    }
+    private int destination(ItemStack stack) {
+        List<Stack> slots = destinations.stream().map(i -> ChestSnapshots.toStack(menu.getSlot(i).getItem())).toList();
+        int index = SingleItemTransferPlanner.destination(slots, ChestSnapshots.toStack(stack),
+                i -> menu.getSlot(destinations.get(i)).mayPlace(stack),
+                i -> menu.getSlot(destinations.get(i)).getMaxStackSize(stack));
+        return index < 0 ? -1 : destinations.get(index);
     }
     @Override public void tick() {
         if (mc.player == null || mc.player.containerMenu != menu) { finish(t("status.closed")); return; }
-        if (cancelRequested) { recover(); return; }
+        if (cancelRequested || !unchanged()) { cancelRequested = true; recover(); return; }
+        if (System.currentTimeMillis() - lastInput > ScrollAccumulator.GESTURE_MS) requests.clear();
         for (int clicks = 0; clicks < clicksPerTick; clicks++) {
-            Slot from = menu.getSlot(source);
-            if (phase == 0) {
-                if (requests.size() == 0) { finish(t("scroll.done")); return; }
-                if (!cursorEmpty()) { finish(t("status.cursor_not_empty")); return; }
+            var from = menu.getSlot(source);
+            ItemStack cursor = menu.getCarried();
+            if (cursor.isEmpty()) {
                 ItemStack live = from.getItem();
+                if (activeRemaining == 0) {
+                    if (requests.size() == 0) { finish(t("scroll.done")); return; }
+                    activeRemaining = requests.take(live.getCount());
+                }
                 if (live.isEmpty() || !ItemStack.isSameItemSameComponents(original, live) || !from.mayPickup(mc.player)) {
                     finish(t("status.stopped")); return;
                 }
-                List<Stack> targets = destinations.stream().map(i -> ChestSnapshots.toStack(menu.getSlot(i).getItem())).toList();
-                int next = SingleItemTransferPlanner.destination(targets, ChestSnapshots.toStack(live),
-                        i -> menu.getSlot(destinations.get(i)).mayPlace(live),
-                        i -> menu.getSlot(destinations.get(i)).getMaxStackSize(live));
-                if (next < 0) { finish(t("scroll.full")); return; }
-                destination = destinations.get(next);
-                expectedDestination = menu.getSlot(destination).getItem().copy();
-                ItemStack pickedUp = live.copy();
-                if (com.storagehelper.chest.McStackType.of(live).fragile() && live.getCount() != 1) {
-                    finish(t("status.stopped")); return;
+                if (destination(live) < 0) { finish(t("scroll.full")); return; }
+                int before = live.getCount();
+                if (activeRemaining >= before) {
+                    // Vanilla QUICK_MOVE fills partial stacks before empty slots, without a cursor.
+                    if (!click(source, 0, ContainerInput.QUICK_MOVE)) return;
+                    int moved = before - from.getItem().getCount();
+                    if (moved <= 0 || moved > activeRemaining) { cancelRequested = true; return; }
+                    activeRemaining -= moved;
+                } else {
+                    if (McStackType.of(live).fragile()) { finish(t("status.stopped")); return; }
+                    int button = BatchTransferPlanner.pickupButton(before, activeRemaining);
+                    if (!click(source, button, ContainerInput.PICKUP)) return;
+                    int expected = button == 1 ? (before + 1) / 2 : before;
+                    if (menu.getCarried().getCount() != expected || !ItemStack.isSameItemSameComponents(original, menu.getCarried())) {
+                        cancelRequested = true; return;
+                    }
                 }
-                if (!click(source, 0, ContainerInput.PICKUP)) return;
-                phase = 1;
-                if (!from.getItem().isEmpty() || !same(menu.getCarried(), pickedUp)) {
-                    cancelRequested = true; return;
-                }
-            } else if (phase == 1) {
-                if (!same(from.getItem(), expectedSource) || !same(menu.getCarried(), expectedCursor)
-                        || !same(menu.getSlot(destination).getItem(), expectedDestination)
-                        || !menu.getSlot(destination).mayPlace(menu.getCarried())) {
-                    cancelRequested = true; recover(); return;
-                }
-                int before = menu.getCarried().getCount();
-                // A bundle on the cursor would unload its contents on a secondary click.
-                // Unstackable sources instead use a primary click into an empty slot.
-                if (!click(destination, before == 1 ? 0 : 1, ContainerInput.PICKUP)) return;
-                if (menu.getCarried().getCount() != before - 1) { cancelRequested = true; return; }
-                requests.completed();
-                phase = menu.getCarried().isEmpty() ? 0 : 2;
             } else {
-                if (!same(from.getItem(), expectedSource) || !same(menu.getCarried(), expectedCursor)) {
-                    cancelRequested = true; recover(); return;
+                // Fresh wheel input can use the already-owned cursor stack. Do not
+                // return and pick it up again merely because another event arrived.
+                if (cursor.getCount() > activeRemaining)
+                    activeRemaining += requests.take(cursor.getCount() - activeRemaining);
+                if (!ItemStack.isSameItemSameComponents(original, cursor)) { cancelRequested = true; recover(); return; }
+                int target = activeRemaining == 0 ? -1 : destination(cursor);
+                if (target < 0) {
+                    // Batch complete or no more capacity: return the remainder in one click.
+                    if (activeRemaining > 0) { activeRemaining = 0; requests.clear(); }
+                    if (!from.mayPlace(cursor) || !from.getItem().isEmpty()
+                            && !ItemStack.isSameItemSameComponents(from.getItem(), cursor)
+                            || from.getItem().getCount() + cursor.getCount() > from.getMaxStackSize(cursor)) {
+                        cancelRequested = true; recover(); return;
+                    }
+                    if (!click(source, 0, ContainerInput.PICKUP)) return;
+                    if (!cursorEmpty()) { cancelRequested = true; return; }
+                } else {
+                    var to = menu.getSlot(target);
+                    int room = to.getMaxStackSize(cursor) - to.getItem().getCount();
+                    boolean canReturn = from.mayPlace(cursor) && (from.getItem().isEmpty()
+                            || ItemStack.isSameItemSameComponents(from.getItem(), cursor))
+                            && from.getItem().getCount() < from.getMaxStackSize(cursor);
+                    var placement = BatchTransferPlanner.placement(cursor.getCount(), activeRemaining, room, canReturn);
+                    int before = cursor.getCount();
+                    int button = placement == BatchTransferPlanner.Placement.ALL ? 0 : 1;
+                    int slot = placement == BatchTransferPlanner.Placement.TRIM_SOURCE ? source : target;
+                    int expected = button == 0 ? Math.min(before, room) : 1;
+                    if (!click(slot, button, ContainerInput.PICKUP)) return;
+                    int moved = before - menu.getCarried().getCount();
+                    if (moved != expected) { cancelRequested = true; return; }
+                    if (slot != source) activeRemaining -= moved;
                 }
-                if (!from.mayPlace(menu.getCarried()) || from.getMaxStackSize(menu.getCarried()) < menu.getCarried().getCount()) {
-                    cancelRequested = true; recover(); return;
-                }
-                if (!click(source, 0, ContainerInput.PICKUP)) return;
-                phase = 0;
             }
-            expectedSource = from.getItem().copy();
-            expectedCursor = menu.getCarried().copy();
+            remember();
         }
     }
-    private static boolean same(ItemStack a, ItemStack b) { return ItemStack.matches(a, b); }
     private void recover() {
         requests.clear();
+        activeRemaining = 0;
         ItemStack cursor = menu.getCarried();
         if (cursor.isEmpty()) { finish(t("status.stopped")); return; }
         // Never manipulate an unexpected cursor introduced by a correction or another action.

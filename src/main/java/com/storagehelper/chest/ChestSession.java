@@ -101,8 +101,9 @@ public final class ChestSession {
 	}
 
 	void rebuildWidgets() {
-		buildWidgets();
-		refreshMatches();
+        // Fabric replaces all per-screen events before every resize/init.
+        // Reattach input, close, and tick handlers along with the widgets.
+        attach();
 	}
 
 	void close() {
@@ -351,13 +352,13 @@ public final class ChestSession {
             return true;
         }
         if (operation instanceof ScrollTransferOperation transfer) {
-            if (transfer.source() == source.index) transfer.enqueue(scroll.add(source.index, delta, System.currentTimeMillis()));
+            if (transfer.source() == source.index) transfer.enqueue(scroll.add(source.index, delta, System.currentTimeMillis(), config.scrollItemsPerUnit()));
             else { transfer.requestCancel(); scroll.reset(); }
             return true;
         }
         if (operation != null || !menu.getCarried().isEmpty() || !source.hasItem()) { scroll.reset(); return true; }
-        int count = scroll.add(source.index, delta, System.currentTimeMillis());
-        if (count > 0) startOperation(new ScrollTransferOperation(mc, menu, source.index, playerSource, count, config.clicksPerTick()));
+        int count = scroll.add(source.index, delta, System.currentTimeMillis(), config.scrollItemsPerUnit());
+        if (count > 0) startOperation(new ScrollTransferOperation(mc, menu, source.index, playerSource, count, config.scrollClicksPerTick()));
         return true;
     }
 

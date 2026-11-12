@@ -59,7 +59,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 			chest(server, chestPos, 12, "minecraft:apple", 3);
 			server.runCommand("clear @a");
 			server.runCommand("item replace entity @a hotbar.0 with minecraft:cobblestone 64");
-			server.runCommand("item replace entity @a hotbar.1 with minecraft:stick 7");
+			server.runCommand("item replace entity @a hotbar.1 with minecraft:stick 64");
 			server.runCommand("item replace entity @a inventory.0 with minecraft:dirt 20");
 			server.runCommand(fmt("tp @a %d %d %d 0 0", x, y, z));
 			conn.waitForClientboundPackets();
@@ -86,7 +86,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 			check(chestAfterDeposit.get(3).equals("minecraft:dirt x30"), "dirt should merge into existing stack: " + chestAfterDeposit);
 			List<String> player = readPlayer(ctx);
 			check(total(player, "minecraft:cobblestone") == 0 && total(player, "minecraft:dirt") == 0, "matching items left in inventory: " + player);
-			check(total(player, "minecraft:stick") == 7, "non-matching stick must stay: " + player);
+			check(total(player, "minecraft:stick") == 64, "non-matching stick must stay: " + player);
 			ctx.takeScreenshot("storagehelper-2-after-deposit");
 
 			// ---- Sort A-Z ----
@@ -177,24 +177,60 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 			ctx.waitTick();
 			check(countMatches(ctx) == 0 && !searchActive(ctx), "clear button should reset the search");
 
-            // Wheel requests are counted in individual items, in both directions.
+            // Proportional wheel input: four units request 32 items, two units request 16.
             ctx.getInput().setCursorPos(4, 4);
             ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
             moveToSlot(ctx, findSlot(ctx, "minecraft:stick"));
             ctx.getInput().holdShift();
-            ctx.getInput().scroll(3);
+            ctx.getInput().scroll(4);
             ctx.waitTicks(20);
             ctx.getInput().releaseShift();
             waitForIdle(ctx, conn);
-            check(total(readChest(server, chestPos), "minecraft:stick") == 3, "three wheel steps must deposit exactly three items: " + readChest(server, chestPos));
+            check(total(readChest(server, chestPos), "minecraft:stick") == 32, "four wheel units must deposit exactly 32 items: " + readChest(server, chestPos));
             moveToSlot(ctx, findSlot(ctx, "minecraft:stick"));
             ctx.getInput().holdShift();
             ctx.getInput().scroll(-2);
             ctx.waitTicks(15);
             ctx.getInput().releaseShift();
             waitForIdle(ctx, conn);
-            check(total(readChest(server, chestPos), "minecraft:stick") == 1, "two wheel steps must withdraw exactly two items");
+            check(total(readChest(server, chestPos), "minecraft:stick") == 16, "two wheel units must withdraw exactly 16 items");
             check(ctx.computeOnClient(mc -> mc.player.containerMenu.getCarried().isEmpty()), "wheel transfer must finish with an empty cursor");
+            moveToSlot(ctx, ctx.computeOnClient(mc -> mc.player.containerMenu.slots.stream().filter(slot -> slot.container == mc.player.getInventory() && slot.getItem().is(net.minecraft.world.item.Items.STICK)).findFirst().orElseThrow().index));
+            ctx.getInput().holdShift();
+            ctx.getInput().scroll(8);
+            ctx.waitTicks(6);
+            ctx.getInput().releaseShift();
+            waitForIdle(ctx, conn);
+            check(total(readChest(server, chestPos), "minecraft:stick") == 64, "whole-stack request must fill the existing partial stack");
+            moveToSlot(ctx, findSlot(ctx, "minecraft:stick"));
+            ctx.getInput().holdShift();
+            ctx.getInput().scroll(-.5);
+            ctx.waitTicks(10);
+            ctx.getInput().releaseShift();
+            waitForIdle(ctx, conn);
+            check(total(readChest(server, chestPos), "minecraft:stick") == 60, "half-unit gesture must withdraw exactly four items");
+            // A shulker item in a chest uses the same native border hit-test.
+            chest(server, chestPos, 26, "minecraft:red_shulker_box[container=[{slot:13,item:{id:'minecraft:diamond',count:5}}]]", 1);
+            conn.waitForClientboundPackets();
+            int chestGuiScale = ctx.computeOnClient(mc -> mc.options.guiScale().get());
+            for (int scale : new int[]{1, 2}) {
+                ctx.runOnClient(mc -> mc.options.guiScale().set(scale));
+                ctx.waitTick();
+                double[] point = ctx.computeOnClient(mc -> {
+                    var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen();
+                    var a = (com.storagehelper.mixin.AbstractContainerScreenAccessor)screen;
+                    Slot slot = screen.getMenu().getSlot(26);
+                    double unit = mc.getWindow().getGuiScale();
+                    return new double[]{(a.storagehelper$getLeftPos() + slot.x - .5) * unit, (a.storagehelper$getTopPos() + slot.y + 8) * unit};
+                });
+                ctx.getInput().setCursorPos(point[0], point[1]);
+                ctx.waitTick();
+                check(ctx.computeOnClient(mc -> com.storagehelper.gui.ScreenSlots.at((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen(), mc.mouseHandler.getScaledXPos(mc.getWindow()), mc.mouseHandler.getScaledYPos(mc.getWindow())).index) == 26, "container slot border must use native hit testing");
+                ctx.takeScreenshot("storagehelper-chest-shulker-border-" + scale);
+            }
+            ctx.runOnClient(mc -> mc.options.guiScale().set(chestGuiScale));
+            ctx.waitTick();
+
 
 			// Second Escape closes the chest.
 			ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
@@ -226,6 +262,31 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
                     ctx.waitTicks(2);
                     moveToSlot(ctx, findSlot(ctx, "minecraft:purple_shulker_box"));
                     ctx.takeScreenshot("storagehelper-7-shulker-preview");
+                    int shulkerSlot = findSlot(ctx, "minecraft:purple_shulker_box");
+                    int previousScale = ctx.computeOnClient(mc -> mc.options.guiScale().get());
+                    for (int scale : new int[]{1, 2}) {
+                        ctx.runOnClient(mc -> mc.options.guiScale().set(scale));
+                        ctx.waitTicks(2);
+                        double[][] borders = {{-.5, 8}, {16.5, 8}, {8, 16.5}, {-.5, -.5}};
+                        for (int edge = 0; edge < borders.length; edge++) {
+                            double dx = borders[edge][0], dy = borders[edge][1];
+                            double[] point = ctx.computeOnClient(mc -> {
+                                var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen();
+                                var a = (com.storagehelper.mixin.AbstractContainerScreenAccessor)screen;
+                                Slot slot = screen.getMenu().getSlot(shulkerSlot);
+                                double unit = mc.getWindow().getGuiScale();
+                                return new double[]{(a.storagehelper$getLeftPos() + slot.x + dx) * unit, (a.storagehelper$getTopPos() + slot.y + dy) * unit};
+                            });
+                            ctx.getInput().setCursorPos(point[0], point[1]);
+                            ctx.waitTick();
+                            check(ctx.computeOnClient(mc -> com.storagehelper.gui.ScreenSlots.at((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen(), mc.mouseHandler.getScaledXPos(mc.getWindow()), mc.mouseHandler.getScaledYPos(mc.getWindow())).index) == shulkerSlot, "native slot border must resolve to shulker at scale " + scale);
+                            ctx.takeScreenshot("storagehelper-shulker-border-" + scale + "-" + edge);
+                        }
+                    }
+                    ctx.runOnClient(mc -> mc.options.guiScale().set(previousScale));
+                    ctx.waitTicks(2);
+                    moveToSlot(ctx, shulkerSlot);
+
                     // Actual shulker slot rules reject a nested shulker, without picking it up.
                     ctx.getInput().holdShift();
                     ctx.getInput().scroll(1);
@@ -237,20 +298,24 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
                     int bundleSlot = findSlot(ctx, "minecraft:bundle");
                     moveToSlot(ctx, bundleSlot);
                     ctx.takeScreenshot("storagehelper-8-bundle-popup");
+                    check(ctx.computeOnClient(mc -> com.storagehelper.gui.HoverContents.popupSourceIndex((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen())) == bundleSlot, "bundle must open by the next frame");
+                    check(ctx.computeOnClient(mc -> com.storagehelper.gui.HoverContents.popupLayout((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen()).height()) == 34, "two entries should use one compact row");
+                    ctx.getInput().setCursorPos(4, 4);
+                    ctx.waitTick();
+                    check(ctx.computeOnClient(mc -> com.storagehelper.gui.HoverContents.popupSourceIndex((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen())) == -1, "popup must dismiss immediately outside source and body");
+                    server.runCommand("item replace entity @a hotbar.0 with minecraft:bundle[bundle_contents=[{id:'minecraft:dirt',count:2}]] 1");
+                    conn.waitForClientboundPackets();
+                    moveToSlot(ctx, bundleSlot);
+                    int otherBundle = ctx.computeOnClient(mc -> mc.player.containerMenu.slots.stream().filter(slot -> slot.index != bundleSlot && slot.getItem().is(net.minecraft.tags.ItemTags.BUNDLES)).findFirst().orElseThrow().index);
+                    moveToSlot(ctx, otherBundle);
+                    check(ctx.computeOnClient(mc -> com.storagehelper.gui.HoverContents.popupSourceIndex((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen())) == otherBundle, "switching bundles must replace source immediately");
+                    check(ctx.computeOnClient(mc -> com.storagehelper.gui.HoverContents.popupLayout((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen()).columns()) == 1, "new bundle must show its own contents");
+                    moveToSlot(ctx, bundleSlot);
                     double[] entry = ctx.computeOnClient(mc -> {
                         var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen();
-                        var a = (com.storagehelper.mixin.AbstractContainerScreenAccessor)screen;
-                        Slot slot = screen.getMenu().getSlot(bundleSlot);
-                        int columns = Math.max(1, Math.min(6, (screen.width - 20) / 20));
-                        int rows = Math.max(1, Math.min(3, (screen.height - 90) / 20));
-                        int width = columns * 20 + 8, height = 18 + rows * 20 + 30;
-                        int sx = a.storagehelper$getLeftPos() + slot.x, sy = a.storagehelper$getTopPos() + slot.y;
-                        int px = sx + 20;
-                        if (px + width > screen.width - 4) px = sx - width - 4;
-                        px = Math.max(4, Math.min(px, screen.width - width - 4));
-                        int py = Math.max(4, Math.min(sy, screen.height - height - 4));
+                        var layout = com.storagehelper.gui.HoverContents.popupLayout(screen);
                         double scale = mc.getWindow().getGuiScale();
-                        return new double[]{(px + 4 + 20 + 8) * scale, (py + 18 + 8) * scale};
+                        return new double[]{(layout.x() + 2 + 18 + 8) * scale, (layout.y() + 12 + 8) * scale};
                     });
                     ctx.getInput().setCursorPos(entry[0], entry[1]);
                     ctx.waitTick();
@@ -263,6 +328,8 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
                     // Place the extracted stack before closing the screen.
                     moveToSlot(ctx, 27);
                     ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+                    moveToSlot(ctx, bundleSlot);
+                    check(ctx.computeOnClient(mc -> com.storagehelper.gui.HoverContents.popupLayout((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen()).columns()) == 1, "extraction must invalidate cached entries");
                 }
 
                 ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);

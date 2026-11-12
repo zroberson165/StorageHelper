@@ -13,11 +13,6 @@ public final class ScreenSlots {
                 || InputConstants.isKeyDown(SDLScancode.SDL_SCANCODE_RSHIFT);
     }
     public static Slot at(AbstractContainerScreen<?> screen, double x, double y) {
-        var a = (AbstractContainerScreenAccessor) screen;
-        for (Slot slot : screen.getMenu().slots) {
-            int sx = a.storagehelper$getLeftPos() + slot.x, sy = a.storagehelper$getTopPos() + slot.y;
-            if (slot.isActive() && x >= sx && x < sx + 16 && y >= sy && y < sy + 16) return slot;
-        }
-        return null;
+        return ((AbstractContainerScreenAccessor) screen).storagehelper$getHoveredSlot(x, y);
     }
 }

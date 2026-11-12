@@ -33,7 +33,7 @@ These versions were checked on 2026-11-11 against Mojang's `piston-meta` manifes
 
 1. Install the Fabric Loader for Minecraft 26.3 with the official installer (https://fabricmc.net/use/installer/) and start the game once with the new "fabric-loader-26.3" profile so the `mods` folder is created.
 2. Download **Fabric API** for 26.3 (https://modrinth.com/mod/fabric-api or CurseForge) and put the jar in `mods`.
-3. Put `storagehelper-1.1.0.jar` (from `build/libs`, see below) in the same `mods` folder:
+3. Put `storagehelper-1.1.1.jar` (from `build/libs`, see below) in the same `mods` folder:
    * macOS: `~/Library/Application Support/minecraft/mods`
    * Windows: `%APPDATA%\.minecraft\mods`
    * Linux: `~/.minecraft/mods`
@@ -46,6 +46,8 @@ Settings are stored in `config/storagehelper.json` (inside the game directory):
 ```json
 {
   "sortMode": "alphabetical",   // or "by_type"; also changed from the in-game selector
+  "scrollItemsPerUnit": 8.0,   // proportional wheel sensitivity (1-32)
+  "scrollClicksPerTick": 4,    // separate scroll click budget per tick (1-5)
   "clicksPerTick": 1,           // 1-5 inventory clicks per game tick while an operation runs
   "dimNonMatching": true        // darken chest slots that do not match the search
 }
@@ -70,8 +72,8 @@ cd StorageHelper
 
 Outputs in `build/libs/`:
 
-* `storagehelper-1.1.0.jar` – **the distributable mod** (install this).
-* `storagehelper-1.1.0-sources.jar` – sources, not needed for playing.
+* `storagehelper-1.1.1.jar` – **the distributable mod** (install this).
+* `storagehelper-1.1.1-sources.jar` – sources, not needed for playing.
 
 The build runs the unit tests (`./gradlew test` runs them alone). Reports land in `build/reports/tests/test/index.html`.
 
@@ -102,9 +104,9 @@ Both operations require an empty cursor and refuse to start while another one ru
 
 - Hover any shulker-box item in your inventory or a supported container to see its 9×3 contents grid, with names, icons, and counts. This uses client-available item data; missing data is labeled rather than guessed. No placing or opening is needed.
 - Hover a bundle, move into its popup, and left-click a selectable entry to extract that stack to an empty cursor using vanilla selection and inventory clicks. Scroll inside the popup to see more entries. Entries beyond vanilla's selectable front portion are read-only; remove earlier stacks first. Creative-inventory popups are read-only.
-- Hold **Shift + scroll up over your inventory/hotbar** to deposit one item per step, or **Shift + scroll down over the container** to withdraw one. Other directions do nothing. Fractional trackpad motion accumulates. A maximum of 8 requests per event and 32 queued items prevents large bursts; excess input is ignored. Release Shift or move away to cancel pending requests.
+- Hold **Shift + scroll up over your inventory/hotbar** to deposit a proportional quantity, or **Shift + scroll down over the container** to withdraw. By default, one effective wheel unit requests 8 items and four units request 32. Tiny fractional trackpad motion accumulates; it does not move a stack immediately. Other directions do nothing. Up to 64 items can be queued; excess input is ignored. Release Shift or move away to cancel pending requests. Unstarted work expires after 200 ms without input; an active batch safely completes or returns its cursor.
 
-Wheel transfers, Deposit Matching, and Sort share one operation lock and the configured click pacing. Search retains its text when unfocused and supports clicking back into it, caret positioning, selection, and native platform clipboard shortcuts.
+Wheel transfers, Deposit Matching, and Sort share one operation lock. Scroll sensitivity (`scrollItemsPerUnit`, default 8) is independent of its throughput (`scrollClicksPerTick`, default 4, maximum 5). Whole-stack requests use vanilla quick-move; partial quantities use half-stack pickup, capped merges, and single clicks only for exact remainders. A 32-item request from a 64-item stack into an empty destination takes two clicks instead of 96. Arbitrary quantities can take more clicks; server validation and tick pacing still apply. Other operations retain `clicksPerTick`. Search retains its text when unfocused and supports clicking back into it, caret positioning, selection, and native platform clipboard shortcuts.
 
 See [interaction verification and manual checklist](docs/verification.md) for API details, limitations, and checks still needed on real servers and trackpads.
 
@@ -159,7 +161,7 @@ The normalised query is matched as a substring of each chest stack's displayed n
 
 ### Automated (run on every build)
 
-`./gradlew test` – 33 JUnit 5 tests over the pure logic, including a 600-case randomized sort fuzz (single and double chests, full and partly empty, mixed stack sizes, unstackables with differing components, bundles) that checks: termination within a click bound, no no-op clicks, no bundle-vs-occupied click, item totals unchanged, cursor empty at the end, final layout equal to the target; plus deposit candidate/room rules, category precedence, search matching, ordering determinism, fractional scrolling, bounded queues, and restriction-aware one-item destination planning.
+`./gradlew test` – 40 JUnit 5 tests over the pure logic, including a 600-case randomized sort fuzz (single and double chests, full and partly empty, mixed stack sizes, unstackables with differing components, bundles) that checks: termination within a click bound, no no-op clicks, no bundle-vs-occupied click, item totals unchanged, cursor empty at the end, final layout equal to the target; plus deposit candidate/room rules, category precedence, search matching, ordering determinism, fractional scrolling, bounded queues, and restriction-aware batch destination planning.
 
 What the automated tests **do not** cover: anything that needs the game (rendering, input routing, real server validation, timing).
 

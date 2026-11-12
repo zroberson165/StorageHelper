@@ -1,6 +1,6 @@
 package com.storagehelper.logic;
 
-/** Bounded FIFO count for identical one-item requests. Returns accepted work to callers. */
+/** Bounded quantity accumulator for one source and direction. Returns accepted work to callers. */
 public final class TransferRequests {
     private int pending;
     public int add(int requested) {
@@ -9,6 +9,10 @@ public final class TransferRequests {
         return accepted;
     }
     public int size() { return pending; }
-    public void completed() { if (pending > 0) pending--; }
+    public int take(int maximum) {
+        int count = Math.min(pending, Math.max(0, maximum));
+        pending -= count;
+        return count;
+    }
     public void clear() { pending = 0; }
 }

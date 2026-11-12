@@ -1,6 +1,8 @@
 package com.storagehelper.gui;
 
 import com.storagehelper.chest.ChestSession;
+import com.storagehelper.logic.BundlePopupLayout;
+import static com.storagehelper.logic.BundlePopupLayout.*;
 import com.storagehelper.chest.ChestSessions;
 import com.storagehelper.mixin.AbstractContainerScreenAccessor;
 import net.minecraft.client.Minecraft;
@@ -35,25 +37,33 @@ public final class HoverContents {
     private static Slot source;
     private static ItemStack snapshot = ItemStack.EMPTY;
     private static int x, y, width, height, rows, columns, firstRow;
-    private static long lastInside;
+    private static BundlePopupLayout layout;
+    private static List<ItemStack> cachedItems = List.of();
     private static double wheel;
     private static Screen releaseOwner;
-    private static final int CELL = 20, HEADER = 18, GRACE_MS = 300;
+
     private HoverContents() {}
 
     public static void reset(Screen screen) {
-        if (owner == screen) { owner = null; source = null; snapshot = ItemStack.EMPTY; wheel = 0; }
+        if (owner == screen) { owner = null; source = null; snapshot = ItemStack.EMPTY; wheel = 0; cachedItems = List.of(); layout = null; }
         if (releaseOwner == screen) releaseOwner = null;
     }
     private static boolean supported(AbstractContainerScreen<?> screen) {
         return screen instanceof InventoryScreen || screen instanceof CreativeModeInventoryScreen || ChestSessions.forScreen(screen) != null;
     }
     private static boolean inside(double mx, double my) {
-        return source != null && mx >= x && mx < x + width && my >= y && my < y + height;
+        return source != null && layout != null && layout.contains(mx, my);
     }
     public static boolean pointerInside(AbstractContainerScreen<?> screen) {
         var mc = Minecraft.getInstance();
         return owner == screen && inside(mc.mouseHandler.getScaledXPos(mc.getWindow()), mc.mouseHandler.getScaledYPos(mc.getWindow()));
+    }
+    /** Current presentation for screen integration/diagnostics; null when dismissed. */
+    public static BundlePopupLayout popupLayout(AbstractContainerScreen<?> screen) {
+        return valid(screen) ? layout : null;
+    }
+    public static int popupSourceIndex(AbstractContainerScreen<?> screen) {
+        return valid(screen) ? source.index : -1;
     }
     private static boolean valid(AbstractContainerScreen<?> screen) {
         var mc = Minecraft.getInstance();
@@ -62,26 +72,25 @@ public final class HoverContents {
     }
     private static void open(AbstractContainerScreen<?> screen, Slot slot) {
         owner = screen; source = slot; snapshot = slot.getItem().copy(); firstRow = 0; wheel = 0;
-        columns = Math.max(1, Math.min(6, (screen.width - 20) / CELL));
-        rows = Math.max(1, Math.min(3, (screen.height - 90) / CELL));
-        width = columns * CELL + 8;
-        height = HEADER + rows * CELL + 30;
+        BundleContents contents = slot.getItem().get(DataComponents.BUNDLE_CONTENTS);
+        cachedItems = contents == null ? List.of() : contents.itemCopies().toList();
         var a = (AbstractContainerScreenAccessor) screen;
         int sx = a.storagehelper$getLeftPos() + slot.x, sy = a.storagehelper$getTopPos() + slot.y;
-        x = sx + 20;
-        if (x + width > screen.width - 4) x = sx - width - 4;
-        x = Math.max(4, Math.min(x, screen.width - width - 4));
-        y = Math.max(4, Math.min(sy, screen.height - height - 4));
-        lastInside = System.currentTimeMillis();
+        layout = BundlePopupLayout.place(screen.width, screen.height, sx, sy, cachedItems.size(),
+                Minecraft.getInstance().font.width(slot.getItem().getHoverName()));
+        x = layout.x(); y = layout.y(); width = layout.width(); height = layout.height();
+        columns = layout.columns(); rows = layout.rows();
     }
+
     public static boolean render(AbstractContainerScreen<?> screen, GuiGraphicsExtractor graphics, int mx, int my) {
         if (!supported(screen)) return false;
         var mc = Minecraft.getInstance();
         Slot hovered = ScreenSlots.at(screen, mx, my);
         if (!valid(screen)) reset(owner);
-        if (source != null && owner == screen) {
-            if (hovered == source || inside(mx, my)) lastInside = System.currentTimeMillis();
-            else if (System.currentTimeMillis() - lastInside > GRACE_MS) reset(screen);
+        if (source != null && owner == screen && !inside(mx, my) && hovered != source) {
+            // Another actual slot wins immediately. Only the one-pixel corridor can
+            // keep a popup alive between its source and its body; no dismissal timer.
+            if (!layout.transitionContains(mx, my)) reset(screen);
         }
         if (source == null && hovered != null && hovered.getItem().is(ItemTags.BUNDLES)) open(screen, hovered);
         if (owner == screen && source != null) {
@@ -106,13 +115,9 @@ public final class HoverContents {
         }
         return false;
     }
-    private static List<ItemStack> items() {
-        BundleContents contents = source.getItem().get(DataComponents.BUNDLE_CONTENTS);
-        return contents == null ? List.of() : contents.itemCopies().toList();
-    }
+    private static List<ItemStack> items() { return cachedItems; }
     private static int entryAt(double mx, double my) {
-        if (!inside(mx, my) || mx < x + 4 || mx >= x + 4 + columns * CELL || my < y + HEADER || my >= y + HEADER + rows * CELL) return -1;
-        return (firstRow + (int)(my - y - HEADER) / CELL) * columns + (int)(mx - x - 4) / CELL;
+        return layout == null ? -1 : layout.entryAt(mx, my, firstRow);
     }
     private static void drawBundle(AbstractContainerScreen<?> screen, GuiGraphicsExtractor g, int mx, int my) {
         var mc = Minecraft.getInstance();
@@ -121,19 +126,17 @@ public final class HoverContents {
         int hovered = entryAt(mx, my);
         g.nextStratum();
         g.fill(x, y, x + width, y + height, 0xF0181228);
-        g.text(mc.font, mc.font.plainSubstrByWidth(source.getItem().getHoverName().getString(), width - 8), x + 4, y + 4, -1, false);
+        g.text(mc.font, mc.font.plainSubstrByWidth(source.getItem().getHoverName().getString(), width - 4), x + 2, y + 2, -1, false);
         for (int cell = 0; cell < rows * columns; cell++) {
             int index = firstRow * columns + cell;
-            int cx = x + 4 + cell % columns * CELL, cy = y + HEADER + cell / columns * CELL;
-            g.fill(cx, cy, cx + 19, cy + 19, index == hovered ? 0xFF8A7840 : index == selected ? 0xFF555577 : 0xFF332D40);
+            int cx = x + PAD + cell % columns * CELL, cy = y + HEADER + cell / columns * CELL;
             if (index < items.size()) {
+                g.fill(cx, cy, cx + 18, cy + 18, index == hovered ? 0xFF8A7840 : index == selected ? 0xFF555577 : 0xFF332D40);
                 g.item(items.get(index), cx + 1, cy + 1);
                 g.itemDecorations(mc.font, items.get(index), cx + 1, cy + 1);
             }
         }
-        Component footer = Component.translatable(items.isEmpty() ? "storagehelper.bundle.empty" : "storagehelper.bundle.hint");
-        var wrapped = mc.font.split(footer, width - 8);
-        for (int i = 0; i < Math.min(2, wrapped.size()); i++) g.text(mc.font, wrapped.get(i), x + 4, y + HEADER + rows * CELL + 3 + i * 10, -1, false);
+        if (items.isEmpty()) g.text(mc.font, Component.translatable("storagehelper.bundle.empty"), x + PAD, y + HEADER, -1, false);
         if (hovered >= 0 && hovered < items.size()) {
             List<Component> tooltip = new ArrayList<>(Screen.getTooltipFromItem(mc, items.get(hovered)));
             tooltip.add(Component.translatable(screen instanceof CreativeModeInventoryScreen ? "storagehelper.bundle.readonly"
@@ -151,7 +154,7 @@ public final class HoverContents {
     public static boolean click(AbstractContainerScreen<?> screen, MouseButtonEvent event) {
         if (owner != screen || !inside(event.x(), event.y())) return false;
         releaseOwner = screen;
-        if (!valid(screen)) { reset(screen); return true; }
+        if (!valid(screen)) { reset(screen); releaseOwner = screen; return true; }
         var mc = Minecraft.getInstance();
         ChestSession session = ChestSessions.forScreen(screen);
         int index = entryAt(event.x(), event.y());
@@ -179,7 +182,6 @@ public final class HoverContents {
         int steps = (int) wheel; wheel -= steps;
         int max = Math.max(0, (items().size() + columns - 1) / columns - rows);
         firstRow = Math.max(0, Math.min(max, firstRow - steps));
-        lastInside = System.currentTimeMillis();
         return true;
     }
     private static final class ShulkerGrid implements ClientTooltipComponent {

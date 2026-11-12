@@ -24,6 +24,10 @@ public final class StorageHelperConfig {
 	public String sortMode = SortMode.ALPHABETICAL.id();
 	/** Inventory clicks sent per client tick while an operation runs (1-5). */
 	public int clicksPerTick = 1;
+    /** Requested items per effective wheel unit, independent of click throughput. */
+    public double scrollItemsPerUnit = 8.0;
+    /** Scroll-only packet budget per tick; other operations retain their pacing. */
+    public int scrollClicksPerTick = 4;
 	/** Slightly darken chest slots that do not match the search. */
 	public boolean dimNonMatching = true;
 
@@ -68,9 +72,16 @@ public final class StorageHelperConfig {
 		return Math.max(1, Math.min(5, clicksPerTick));
 	}
 
+    public double scrollItemsPerUnit() {
+        return Double.isFinite(scrollItemsPerUnit) ? Math.max(1, Math.min(32, scrollItemsPerUnit)) : 8;
+    }
+    public int scrollClicksPerTick() { return Math.max(1, Math.min(5, scrollClicksPerTick)); }
+
 	private void sanitize() {
 		sortMode = sortMode().id();
 		clicksPerTick = clicksPerTick();
+        scrollItemsPerUnit = scrollItemsPerUnit();
+        scrollClicksPerTick = scrollClicksPerTick();
 	}
 
 	private static Path path() {
