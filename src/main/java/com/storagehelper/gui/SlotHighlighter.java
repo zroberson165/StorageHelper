@@ -20,7 +20,7 @@ public final class SlotHighlighter {
 		if (session == null || !session.isSearchActive()) {
 			return;
 		}
-		if (slot.container != session.menu().getContainer()) {
+		if (session.menu().slots.isEmpty() || slot.container != session.menu().getSlot(0).container) {
 			return; // player inventory slots are never highlighted or dimmed
 		}
 		int x = slot.x;

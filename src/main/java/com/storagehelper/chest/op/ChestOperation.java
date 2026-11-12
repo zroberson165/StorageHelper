@@ -3,7 +3,7 @@ package com.storagehelper.chest.op;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 
 /**
@@ -13,13 +13,13 @@ import net.minecraft.world.inventory.ContainerInput;
  */
 public abstract class ChestOperation {
 	protected final Minecraft mc;
-	protected final ChestMenu menu;
+	protected final AbstractContainerMenu menu;
 	protected final int clicksPerTick;
 	protected boolean cancelRequested;
 	private boolean finished;
 	private Component result = Component.empty();
 
-	protected ChestOperation(Minecraft mc, ChestMenu menu, int clicksPerTick) {
+	protected ChestOperation(Minecraft mc, AbstractContainerMenu menu, int clicksPerTick) {
 		this.mc = mc;
 		this.menu = menu;
 		this.clicksPerTick = Math.max(1, clicksPerTick);

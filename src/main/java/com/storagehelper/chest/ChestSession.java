@@ -21,13 +21,13 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.MultiLineTextWidget;
 import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.components.Tooltip;
-import net.minecraft.client.gui.screens.inventory.ContainerScreen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
@@ -49,8 +49,8 @@ public final class ChestSession {
 	private static final int PANEL_HEIGHT = ROW * 3 + 22 + 12 + 22;
 
 	private final Minecraft mc;
-	private final ContainerScreen screen;
-	private final ChestMenu menu;
+	private final AbstractContainerScreen<?> screen;
+	private final AbstractContainerMenu menu;
 	private final StorageHelperConfig config;
 	private final List<AbstractWidget> ourWidgets = new ArrayList<>();
 
@@ -69,18 +69,18 @@ public final class ChestSession {
 	private Component status = Component.empty();
 	private boolean closed;
 
-	ChestSession(Minecraft mc, ContainerScreen screen, StorageHelperConfig config) {
+	ChestSession(Minecraft mc, AbstractContainerScreen<?> screen, StorageHelperConfig config) {
 		this.mc = mc;
 		this.screen = screen;
 		this.menu = screen.getMenu();
 		this.config = config;
 	}
 
-	public ContainerScreen screen() {
+	public AbstractContainerScreen<?> screen() {
 		return screen;
 	}
 
-	public ChestMenu menu() {
+	public AbstractContainerMenu menu() {
 		return menu;
 	}
 

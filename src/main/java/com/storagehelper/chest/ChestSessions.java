@@ -3,7 +3,7 @@ package com.storagehelper.chest;
 import com.storagehelper.config.StorageHelperConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.inventory.ContainerScreen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import org.jspecify.annotations.Nullable;
 
 /** Tracks the single active chest session (only one container screen can be open at a time). */
@@ -15,7 +15,7 @@ public final class ChestSessions {
 
 	/** Called from {@code ScreenEvents.AFTER_INIT}: fires on open and again on every resize. */
 	public static void onScreenInit(Minecraft mc, Screen screen, StorageHelperConfig config) {
-		if (!(screen instanceof ContainerScreen containerScreen)) {
+		if (!(screen instanceof AbstractContainerScreen<?> containerScreen)) {
 			return;
 		}
 		if (current != null && current.screen() == screen) {

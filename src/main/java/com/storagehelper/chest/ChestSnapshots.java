@@ -1,7 +1,7 @@
 package com.storagehelper.chest;
 
 import com.storagehelper.logic.Stack;
-import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
@@ -13,11 +13,16 @@ public final class ChestSnapshots {
 	}
 
 	/** Number of chest (container) slots; they occupy menu indices {@code 0..n-1}. */
-	public static int chestSlotCount(ChestMenu menu) {
-		return menu.getRowCount() * 9;
+	public static int chestSlotCount(AbstractContainerMenu menu) {
+		// Player inventory slots are always appended after the opened container slots.
+		// Find the boundary from the slot's backing container instead of assuming 27/54.
+		for (int i = 0; i < menu.slots.size(); i++) {
+			if (menu.getSlot(i).container instanceof net.minecraft.world.entity.player.Inventory) return i;
+		}
+		return menu.slots.size();
 	}
 
-	public static List<Stack> chestSlots(ChestMenu menu) {
+	public static List<Stack> chestSlots(AbstractContainerMenu menu) {
 		int n = chestSlotCount(menu);
 		List<Stack> out = new ArrayList<>(n);
 		for (int i = 0; i < n; i++) {
@@ -27,7 +32,7 @@ public final class ChestSnapshots {
 	}
 
 	/** Player main inventory + hotbar as shown in the chest menu (index 0 = menu slot {@code chestSlotCount}). */
-	public static List<Stack> playerSlots(ChestMenu menu) {
+	public static List<Stack> playerSlots(AbstractContainerMenu menu) {
 		int from = chestSlotCount(menu);
 		int to = menu.slots.size();
 		List<Stack> out = new ArrayList<>(to - from);
@@ -37,7 +42,7 @@ public final class ChestSnapshots {
 		return out;
 	}
 
-	public static Stack carried(ChestMenu menu) {
+	public static Stack carried(AbstractContainerMenu menu) {
 		return toStack(menu.getCarried());
 	}
 

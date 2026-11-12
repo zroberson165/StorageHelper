@@ -10,7 +10,7 @@ A **client-side Fabric mod for Minecraft Java Edition 26.3** that makes chest st
 
 It works in single-player and on ordinary vanilla/Paper/Fabric servers **without** being installed on the server: every change is made through normal, server-validated inventory clicks, exactly as if you had clicked the slots yourself.
 
-Supported containers: regular single and double chests, including trapped chests and the copper chest variants (anything built on the vanilla chest block). Barrels, ender chests, shulker boxes, furnaces, crafting tables, merchants and server-plugin menus are deliberately left alone.
+Supported containers: regular single and double chests, including trapped chests and the copper chest variants, plus all 17 placed shulker-box colors. Barrels, ender chests, furnaces, crafting tables, merchants and server-plugin menus are left alone. Shulker boxes opened directly from inventory are not supported.
 
 ---
 
@@ -89,7 +89,7 @@ Import the folder as a Gradle project in IntelliJ IDEA or VS Code (Gradle for Ja
 
 ## Using the panel
 
-The panel sits to the right of the chest (or to the left / hugging the screen edge when the window is too narrow) and re-positions itself on resize and GUI-scale changes.
+The panel sits to the right of the container (or to the left / hugging the screen edge when the window is too narrow) and re-positions itself on resize and GUI-scale changes.
 
 * **Deposit Matching** – moves matching items. Hover for a tooltip; matching hotbar items are included, armor/offhand/cursor are not. While it runs the button reads **Cancel**.
 * **Sort** – sorts the chest in the order shown on the selector below it. Reads **Cancel** while running.
@@ -107,11 +107,11 @@ Both operations require an empty cursor and refuse to start while another one ru
 | Class | Role |
 |---|---|
 | `StorageHelperClient` | Client entrypoint. Loads config, registers the chest-click listener and the screen-init hook. |
-| `chest.ChestDetector` | Decides whether an opened 9x3 / 9x6 container is a real chest: vanilla chest title keys, or a chest block you just right-clicked with a matching size. |
-| `chest.ChestSession` / `ChestSessions` | One session per open chest screen: builds the widgets, owns the search state, runs the active operation each screen tick, and filters keyboard/mouse input. Closing the screen discards the session, so the query resets per chest. |
+| `chest.ChestDetector` | Recognizes vanilla chest screens and placed `ShulkerBoxScreen`s, leaving unrelated containers alone. |
+| `chest.ChestSession` / `ChestSessions` | One session per supported container screen: builds the widgets, owns the search state, runs the active operation each screen tick, and filters keyboard/mouse input. Closing the screen discards the session, so the query resets per container. |
 | `chest.op.DepositOperation` | Deposit Matching as a queue of shift-clicks. |
 | `chest.op.SortOperation` | Sort as a stream of single left-clicks decided tick by tick. |
-| `chest.McStackType`, `ChestSnapshots`, `ItemFactsFactory`, `ClickOverrideDetector` | Adapters from live `ItemStack`s/`ChestMenu` to the game-agnostic planning model. |
+| `chest.McStackType`, `ChestSnapshots`, `ItemFactsFactory`, `ClickOverrideDetector` | Adapters from live `ItemStack`s/container menus to the game-agnostic planning model. Container and player slot boundaries come from the live menu layout. |
 | `logic.SortPlanner`, `ClickSimulator`, `DepositPlanner`, `ItemClassifier`, `SearchMatcher`, `SortMode` | Pure logic with no Minecraft dependency; fully unit-tested. |
 | `gui.SlotHighlighter` + `mixin.AbstractContainerScreenMixin` | Draws the search outline/dim right after each slot's item is drawn (the only injecting mixin). `AbstractContainerScreenAccessor` just reads the GUI rectangle for panel placement. |
 

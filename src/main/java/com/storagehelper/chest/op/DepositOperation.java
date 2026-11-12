@@ -5,7 +5,7 @@ import com.storagehelper.logic.DepositPlanner;
 import com.storagehelper.logic.Stack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 
@@ -25,7 +25,7 @@ public final class DepositOperation extends ChestOperation {
 	private Set<String> matchIds = Set.of();
 	private int startCount;
 
-	public DepositOperation(Minecraft mc, ChestMenu menu, int clicksPerTick) {
+	public DepositOperation(Minecraft mc, AbstractContainerMenu menu, int clicksPerTick) {
 		super(mc, menu, clicksPerTick);
 	}
 
@@ -74,6 +74,13 @@ public final class DepositOperation extends ChestOperation {
 			if (!DepositPlanner.canAccept(ChestSnapshots.chestSlots(menu), stack)) {
 				continue; // no room for this type right now
 			}
+			// QUICK_MOVE is server validated, but avoid queuing known prohibited items where
+			// every destination slot rejects insertion (notably nested shulker boxes).
+			boolean acceptable = false;
+			for (int i = 0; i < ChestSnapshots.chestSlotCount(menu); i++) {
+				if (menu.getSlot(i).mayPlace(live)) { acceptable = true; break; }
+			}
+			if (!acceptable) continue;
 			if (!click(menuSlot, 0, ContainerInput.QUICK_MOVE)) {
 				return;
 			}

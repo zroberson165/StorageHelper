@@ -1,10 +1,12 @@
 package com.storagehelper.chest;
 
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
-import net.minecraft.client.gui.screens.inventory.ContainerScreen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.ShulkerBoxMenu;
+import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
@@ -48,8 +50,9 @@ public final class ChestDetector {
 		});
 	}
 
-	public static boolean isChestScreen(ContainerScreen screen) {
-		ChestMenu menu = screen.getMenu();
+	public static boolean isChestScreen(AbstractContainerScreen<?> screen) {
+		if (screen instanceof ShulkerBoxScreen && screen.getMenu() instanceof ShulkerBoxMenu) return true;
+		if (!(screen.getMenu() instanceof ChestMenu menu)) return false;
 		int rows = menu.getRowCount();
 		if (rows != 3 && rows != 6) {
 			return false;

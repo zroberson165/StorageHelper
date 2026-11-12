@@ -7,7 +7,7 @@ import com.storagehelper.logic.Stack;
 import com.storagehelper.logic.StackType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 
 import java.util.Comparator;
@@ -40,7 +40,7 @@ public final class SortOperation extends ChestOperation {
 	private boolean freeingSlot;
 	private Component stopMessage;
 
-	public SortOperation(Minecraft mc, ChestMenu menu, int clicksPerTick, Comparator<StackType> order) {
+	public SortOperation(Minecraft mc, AbstractContainerMenu menu, int clicksPerTick, Comparator<StackType> order) {
 		super(mc, menu, clicksPerTick);
 		this.order = order;
 	}
