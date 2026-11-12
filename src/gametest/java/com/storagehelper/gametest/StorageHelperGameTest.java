@@ -73,7 +73,20 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 			conn.waitForClientboundPackets();
 			ctx.waitTicks(3);
 			check(ctx.computeOnClient(mc -> ChestSessions.forScreen(mc.gui.screen()) != null), "Storage Helper panel was not attached to the chest screen");
-			ctx.takeScreenshot("storagehelper-1-panel");
+			ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-1-panel");
+            verifyControls(ctx);
+            ctx.clickScreenButton("Order: A-Z");
+            check(ctx.computeOnClient(mc -> StorageHelperClient.config().sortMode()) == SortMode.BY_TYPE, "mode icon must change the saved order");
+            ctx.clickScreenButton("Order: By Type");
+            double[] modePoint = ctx.computeOnClient(mc -> {
+                var modeWidget = Screens.getWidgets(mc.gui.screen()).stream().filter(w -> w.getMessage().getString().equals("Order: A-Z")).findFirst().orElseThrow();
+                double unit = mc.getWindow().getGuiScale();
+                return new double[]{(modeWidget.getX()+10)*unit,(modeWidget.getY()+10)*unit};
+            });
+            ctx.getInput().setCursorPos(modePoint[0],modePoint[1]); ctx.waitTicks(5);
+            ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-mode-tooltip");
+
+
 
 			// ---- Deposit Matching ----
 			ctx.clickScreenButton("storagehelper.button.deposit");
@@ -87,17 +100,23 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 			List<String> player = readPlayer(ctx);
 			check(total(player, "minecraft:cobblestone") == 0 && total(player, "minecraft:dirt") == 0, "matching items left in inventory: " + player);
 			check(total(player, "minecraft:stick") == 64, "non-matching stick must stay: " + player);
-			ctx.takeScreenshot("storagehelper-2-after-deposit");
+			ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-2-after-deposit");
 
 			// ---- Sort A-Z ----
 			ctx.runOnClient(mc -> StorageHelperClient.config().setSortMode(SortMode.ALPHABETICAL));
 			ctx.clickScreenButton("storagehelper.button.sort");
+            ctx.runOnClient(mc -> {
+                for (var widget : Screens.getWidgets(mc.gui.screen())) if (widget instanceof com.storagehelper.gui.IconButton icon) {
+                    if (icon.icon() == com.storagehelper.gui.IconButton.Icon.ALPHABETICAL || icon.icon() == com.storagehelper.gui.IconButton.Icon.DEPOSIT)
+                        check(!icon.active, "other action icons must disable while sorting");
+                }
+            });
 			waitForIdle(ctx, conn);
 			List<String> sortedAz = readChest(server, chestPos);
 			expectPrefix(sortedAz, "minecraft:apple x3", "minecraft:cobblestone x64", "minecraft:cobblestone x64",
 					"minecraft:cobblestone x16", "minecraft:diamond_sword x1", "minecraft:dirt x35", "-");
 			check(total(sortedAz, "minecraft:cobblestone") == 144 && total(sortedAz, "minecraft:dirt") == 35, "sort changed item totals: " + sortedAz);
-			ctx.takeScreenshot("storagehelper-3-sorted-az");
+			ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-3-sorted-az");
 
 			// ---- Sort By Type ----
 			ctx.runOnClient(mc -> StorageHelperClient.config().setSortMode(SortMode.BY_TYPE));
@@ -107,7 +126,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 			expectPrefix(sortedType, "minecraft:diamond_sword x1", "minecraft:apple x3", "minecraft:cobblestone x64",
 					"minecraft:cobblestone x64", "minecraft:cobblestone x16", "minecraft:dirt x35", "-");
 			ctx.runOnClient(mc -> StorageHelperClient.config().setSortMode(SortMode.ALPHABETICAL));
-			ctx.takeScreenshot("storagehelper-4-sorted-type");
+			ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-4-sorted-type");
 
 			// ---- Search + key routing ----
 			double[] box = ctx.computeOnClient(mc -> {
@@ -125,14 +144,14 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 			ctx.getInput().typeChars("zzz");
 			ctx.waitTicks(2);
 			check(searchActive(ctx) && countMatches(ctx) == 0, "a query with no hits must show the no-match state");
-			ctx.takeScreenshot("storagehelper-5a-no-matches");
-			check(ctx.tryClickScreenButton("\u2715"), "clear button not found");
+			ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-5a-no-matches");
+			check(ctx.tryClickScreenButton("storagehelper.search.clear"), "clear button not found");
 			ctx.getInput().setCursorPos(box[0], box[1]);
 			ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
 			ctx.getInput().typeChars("COBB");
 			ctx.waitTicks(2);
 			check(countMatches(ctx) == 3, "expected 3 cobblestone matches, got " + countMatches(ctx));
-			ctx.takeScreenshot("storagehelper-5b-search-highlight");
+			ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-5b-search-highlight");
 
 			// Hover a chest slot and press the hotbar-1 key and the inventory key: with the box focused
 			// nothing may move and the screen must stay open.
@@ -154,7 +173,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 			conn.waitForClientboundPackets();
 			List<String> afterKeys = readChest(server, chestPos);
 			check(afterKeys.equals(sortedType), "hotbar key swapped a slot while the search box was focused: " + afterKeys);
-			ctx.takeScreenshot("storagehelper-5c-search-with-tooltip");
+			ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-5c-search-with-tooltip");
 
 			// Escape leaves the box but keeps the query; the clear button resets it.
 			ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
@@ -173,11 +192,11 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
             ctx.getInput().pressKey(InputConstants.KEY_BACKSPACE);
             ctx.waitTick();
             check(countMatches(ctx) == 3, "backspace after refocusing must restore the existing query: " + ctx.computeOnClient(mc -> Screens.getWidgets(mc.gui.screen()).stream().filter(w -> w instanceof EditBox).map(w -> ((EditBox)w).getValue() + ":" + ((EditBox)w).getCursorPosition() + ":" + w.isFocused()).toList()));
-			check(ctx.tryClickScreenButton("✕"), "clear button not found");
+			check(ctx.tryClickScreenButton("storagehelper.search.clear"), "clear button not found");
 			ctx.waitTick();
 			check(countMatches(ctx) == 0 && !searchActive(ctx), "clear button should reset the search");
 
-            // Proportional wheel input: four units request 32 items, two units request 16.
+            // Smoother default: four units request 8 items, two units request 4.
             ctx.getInput().setCursorPos(4, 4);
             ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
             moveToSlot(ctx, findSlot(ctx, "minecraft:stick"));
@@ -186,18 +205,18 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
             ctx.waitTicks(20);
             ctx.getInput().releaseShift();
             waitForIdle(ctx, conn);
-            check(total(readChest(server, chestPos), "minecraft:stick") == 32, "four wheel units must deposit exactly 32 items: " + readChest(server, chestPos));
+            check(total(readChest(server, chestPos), "minecraft:stick") == 8, "four wheel units must deposit exactly eight items: " + readChest(server, chestPos));
             moveToSlot(ctx, findSlot(ctx, "minecraft:stick"));
             ctx.getInput().holdShift();
             ctx.getInput().scroll(-2);
             ctx.waitTicks(15);
             ctx.getInput().releaseShift();
             waitForIdle(ctx, conn);
-            check(total(readChest(server, chestPos), "minecraft:stick") == 16, "two wheel units must withdraw exactly 16 items");
+            check(total(readChest(server, chestPos), "minecraft:stick") == 4, "two wheel units must withdraw exactly four items");
             check(ctx.computeOnClient(mc -> mc.player.containerMenu.getCarried().isEmpty()), "wheel transfer must finish with an empty cursor");
             moveToSlot(ctx, ctx.computeOnClient(mc -> mc.player.containerMenu.slots.stream().filter(slot -> slot.container == mc.player.getInventory() && slot.getItem().is(net.minecraft.world.item.Items.STICK)).findFirst().orElseThrow().index));
             ctx.getInput().holdShift();
-            ctx.getInput().scroll(8);
+            ctx.getInput().scroll(32);
             ctx.waitTicks(6);
             ctx.getInput().releaseShift();
             waitForIdle(ctx, conn);
@@ -208,7 +227,11 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
             ctx.waitTicks(10);
             ctx.getInput().releaseShift();
             waitForIdle(ctx, conn);
-            check(total(readChest(server, chestPos), "minecraft:stick") == 60, "half-unit gesture must withdraw exactly four items");
+            check(total(readChest(server, chestPos), "minecraft:stick") == 63, "half-unit gesture must withdraw exactly one item");
+            moveToSlot(ctx, ctx.computeOnClient(mc -> mc.player.containerMenu.slots.stream().filter(slot -> slot.container == mc.player.getInventory() && slot.getItem().is(net.minecraft.world.item.Items.STICK)).findFirst().orElseThrow().index));
+            ctx.getInput().holdShift(); ctx.getInput().scroll(1); ctx.waitTicks(8); ctx.getInput().releaseShift();
+            waitForIdle(ctx, conn);
+            check(total(readChest(server, chestPos), "minecraft:stick") == 64, "a two-item request with one available item must transfer that one item");
             // A shulker item in a chest uses the same native border hit-test.
             chest(server, chestPos, 26, "minecraft:red_shulker_box[container=[{slot:13,item:{id:'minecraft:diamond',count:5}}]]", 1);
             conn.waitForClientboundPackets();
@@ -226,7 +249,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
                 ctx.getInput().setCursorPos(point[0], point[1]);
                 ctx.waitTick();
                 check(ctx.computeOnClient(mc -> com.storagehelper.gui.ScreenSlots.at((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen(), mc.mouseHandler.getScaledXPos(mc.getWindow()), mc.mouseHandler.getScaledYPos(mc.getWindow())).index) == 26, "container slot border must use native hit testing");
-                ctx.takeScreenshot("storagehelper-chest-shulker-border-" + scale);
+                ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-chest-shulker-border-" + scale);
             }
             ctx.runOnClient(mc -> mc.options.guiScale().set(chestGuiScale));
             ctx.waitTick();
@@ -240,7 +263,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 			check(total(finalChest, "minecraft:cobblestone") == 144 && total(finalChest, "minecraft:dirt") == 35
 					&& total(finalChest, "minecraft:apple") == 3 && total(finalChest, "minecraft:diamond_sword") == 1,
 					"items changed after closing: " + finalChest);
-			ctx.takeScreenshot("storagehelper-6-closed");
+			ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-6-closed");
             // All vanilla colors share ShulkerBoxScreen; exercise the actual placed menus.
             String[] colors = {"", "white_", "orange_", "magenta_", "light_blue_", "yellow_", "lime_", "pink_", "gray_", "light_gray_", "cyan_", "purple_", "blue_", "brown_", "green_", "red_", "black_"};
             for (String color : colors) {
@@ -261,12 +284,13 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
                     conn.waitForClientboundPackets();
                     ctx.waitTicks(2);
                     moveToSlot(ctx, findSlot(ctx, "minecraft:purple_shulker_box"));
-                    ctx.takeScreenshot("storagehelper-7-shulker-preview");
+                    ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-7-shulker-preview");
                     int shulkerSlot = findSlot(ctx, "minecraft:purple_shulker_box");
                     int previousScale = ctx.computeOnClient(mc -> mc.options.guiScale().get());
                     for (int scale : new int[]{1, 2}) {
                         ctx.runOnClient(mc -> mc.options.guiScale().set(scale));
                         ctx.waitTicks(2);
+                        verifyControls(ctx);
                         double[][] borders = {{-.5, 8}, {16.5, 8}, {8, 16.5}, {-.5, -.5}};
                         for (int edge = 0; edge < borders.length; edge++) {
                             double dx = borders[edge][0], dy = borders[edge][1];
@@ -280,7 +304,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
                             ctx.getInput().setCursorPos(point[0], point[1]);
                             ctx.waitTick();
                             check(ctx.computeOnClient(mc -> com.storagehelper.gui.ScreenSlots.at((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen(), mc.mouseHandler.getScaledXPos(mc.getWindow()), mc.mouseHandler.getScaledYPos(mc.getWindow())).index) == shulkerSlot, "native slot border must resolve to shulker at scale " + scale);
-                            ctx.takeScreenshot("storagehelper-shulker-border-" + scale + "-" + edge);
+                            ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-shulker-border-" + scale + "-" + edge);
                         }
                     }
                     ctx.runOnClient(mc -> mc.options.guiScale().set(previousScale));
@@ -297,19 +321,21 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
                     check(ctx.computeOnClient(mc -> mc.player.containerMenu.getCarried().isEmpty()), "prohibited transfer changed cursor");
                     int bundleSlot = findSlot(ctx, "minecraft:bundle");
                     moveToSlot(ctx, bundleSlot);
-                    ctx.takeScreenshot("storagehelper-8-bundle-popup");
+                    ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-8-bundle-popup");
                     check(ctx.computeOnClient(mc -> com.storagehelper.gui.HoverContents.popupSourceIndex((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen())) == bundleSlot, "bundle must open by the next frame");
                     check(ctx.computeOnClient(mc -> com.storagehelper.gui.HoverContents.popupLayout((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen()).height()) == 34, "two entries should use one compact row");
                     ctx.getInput().setCursorPos(4, 4);
                     ctx.waitTick();
                     check(ctx.computeOnClient(mc -> com.storagehelper.gui.HoverContents.popupSourceIndex((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen())) == -1, "popup must dismiss immediately outside source and body");
-                    server.runCommand("item replace entity @a hotbar.0 with minecraft:bundle[bundle_contents=[{id:'minecraft:dirt',count:2}]] 1");
+                    server.runCommand("item replace entity @a hotbar.0 with minecraft:bundle[custom_name='Pocket Kit',lore=['Travel supplies'],bundle_contents=[{id:'minecraft:dirt',count:2}]] 1");
                     conn.waitForClientboundPackets();
                     moveToSlot(ctx, bundleSlot);
                     int otherBundle = ctx.computeOnClient(mc -> mc.player.containerMenu.slots.stream().filter(slot -> slot.index != bundleSlot && slot.getItem().is(net.minecraft.tags.ItemTags.BUNDLES)).findFirst().orElseThrow().index);
                     moveToSlot(ctx, otherBundle);
                     check(ctx.computeOnClient(mc -> com.storagehelper.gui.HoverContents.popupSourceIndex((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen())) == otherBundle, "switching bundles must replace source immediately");
                     check(ctx.computeOnClient(mc -> com.storagehelper.gui.HoverContents.popupLayout((net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen()).columns()) == 1, "new bundle must show its own contents");
+                    check(ctx.computeOnClient(mc -> mc.player.containerMenu.getSlot(otherBundle).getItem().getHoverName().getString()).equals("Pocket Kit"), "custom bundle title must be preserved");
+                    ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-custom-bundle-title");
                     moveToSlot(ctx, bundleSlot);
                     double[] entry = ctx.computeOnClient(mc -> {
                         var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen();
@@ -319,7 +345,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
                     });
                     ctx.getInput().setCursorPos(entry[0], entry[1]);
                     ctx.waitTick();
-                    ctx.takeScreenshot("storagehelper-9-bundle-selection");
+                    ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-9-bundle-selection");
                     ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
                     conn.waitForServerboundPackets();
                     conn.waitForClientboundPackets();
@@ -336,11 +362,58 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
                 ctx.waitForScreen(null);
             }
 
+            server.runCommand(fmt("setblock %d %d %d minecraft:chest[facing=north,type=left]", chestPos.getX(), chestPos.getY(), chestPos.getZ()));
+            server.runCommand(fmt("setblock %d %d %d minecraft:chest[facing=north,type=right]", chestPos.getX() + 1, chestPos.getY(), chestPos.getZ()));
+            conn.waitForClientboundPackets();
+            ctx.getInput().lookAt(chestPos); ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_RIGHT);
+            ctx.waitForScreen(ContainerScreen.class);
+            check(ctx.computeOnClient(mc -> ((ContainerScreen)mc.gui.screen()).getMenu().getRowCount()) == 6, "expected a real double chest");
+            for (int scale : new int[]{1,2}) {
+                ctx.runOnClient(mc -> mc.options.guiScale().set(scale)); ctx.waitTicks(2);
+                verifyControls(ctx);
+                double[] search = ctx.computeOnClient(mc -> {
+                    EditBox fallbackSearchBox = (EditBox) Screens.getWidgets(mc.gui.screen()).stream().filter(w -> w instanceof EditBox).findFirst().orElseThrow();
+                    double unit = mc.getWindow().getGuiScale();
+                    return new double[]{(fallbackSearchBox.getX()+5)*unit,(fallbackSearchBox.getY()+8)*unit};
+                });
+                ctx.getInput().setCursorPos(search[0],search[1]); ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+                ctx.getInput().typeChars("stone"); ctx.waitTick();
+                check(searchActive(ctx), "top/fallback search must accept typing");
+                ctx.runOnClient(mc -> mc.gui.toastManager().clear()); ctx.waitTick(); ctx.takeScreenshot("storagehelper-double-search-" + scale);
+                ctx.tryClickScreenButton("storagehelper.search.clear"); ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
+            }
+            ctx.getInput().pressKey(InputConstants.KEY_ESCAPE); ctx.waitForScreen(null);
 		}
 	}
 
 	// ------------------------------------------------------------------ helpers
 
+    private static void verifyControls(ClientGameTestContext ctx) {
+        ctx.runOnClient(mc -> {
+            var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen();
+            var a = (com.storagehelper.mixin.AbstractContainerScreenAccessor)screen;
+            var actions = Screens.getWidgets(screen).stream()
+                    .filter(w -> w instanceof com.storagehelper.gui.IconButton icon && icon.icon() != com.storagehelper.gui.IconButton.Icon.CLEAR).toList();
+            check(actions.size() == 3, "all three action icons must remain available");
+            for (int i = 1; i < actions.size(); i++) {
+                check(actions.get(i).getX() == actions.get(0).getX(), "action icons must form one vertical column");
+                check(actions.get(i).getY() == actions.get(0).getY() + i * 22, "action icons must have consistent vertical spacing");
+            }
+            check(Screens.getWidgets(screen).stream().noneMatch(w -> w instanceof net.minecraft.client.gui.components.MultiLineTextWidget), "operation-status widget must be absent");
+            for (var widget : Screens.getWidgets(screen)) {
+                if (!(widget instanceof com.storagehelper.gui.IconButton) && !(widget instanceof EditBox)) continue;
+                check(widget.getX() >= 0 && widget.getY() >= 0 && widget.getX()+widget.getWidth() <= screen.width && widget.getY()+widget.getHeight() <= screen.height, "control is off-screen");
+                boolean outside = widget.getX()+widget.getWidth() <= a.storagehelper$getLeftPos()
+                        || widget.getX() >= a.storagehelper$getLeftPos()+a.storagehelper$getImageWidth()
+                        || widget.getY()+widget.getHeight() <= a.storagehelper$getTopPos();
+                check(outside, "control overlaps a title or inventory slot");
+                if (widget instanceof com.storagehelper.gui.IconButton) {
+                    check(widget.getWidth()==20 && widget.getHeight()==20, "icon hitboxes must stay usable");
+                    check(!widget.getMessage().getString().isEmpty(), "icon must have a narration label");
+                }
+            }
+        });
+    }
     private static int findSlot(ClientGameTestContext ctx, String id) {
         return ctx.computeOnClient(mc -> {
             for (Slot slot : mc.player.containerMenu.slots)

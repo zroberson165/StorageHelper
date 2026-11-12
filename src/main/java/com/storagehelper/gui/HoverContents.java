@@ -126,7 +126,12 @@ public final class HoverContents {
         int hovered = entryAt(mx, my);
         g.nextStratum();
         g.fill(x, y, x + width, y + height, 0xF0181228);
-        g.text(mc.font, mc.font.plainSubstrByWidth(source.getItem().getHoverName().getString(), width - 4), x + 2, y + 2, -1, false);
+        Component title = source.getItem().getHoverName();
+        int overflow = Math.max(0, mc.font.width(title) - (width - 4));
+        int offset = overflow == 0 ? 0 : (int)((Math.sin(net.minecraft.util.Util.getMillis() / 1800.0) + 1) * .5 * overflow);
+        g.enableScissor(x + 2, y + 1, x + width - 2, y + HEADER);
+        g.text(mc.font, title, x + 2 - offset, y + 2, -1, false);
+        g.disableScissor();
         for (int cell = 0; cell < rows * columns; cell++) {
             int index = firstRow * columns + cell;
             int cx = x + PAD + cell % columns * CELL, cy = y + HEADER + cell / columns * CELL;
@@ -146,9 +151,11 @@ public final class HoverContents {
             g.setTooltipForNextFrame(mc.font, lines, DefaultTooltipPositioner.INSTANCE, mx, my, true);
         } else if (ScreenSlots.at(screen, mx, my) == source) {
             // Keep lore, capacity, names, registry IDs, and other ordinary tooltip text.
-            g.tooltip(mc.font, Screen.getTooltipFromItem(mc, source.getItem()).stream()
-                    .map(c -> ClientTooltipComponent.create(c.getVisualOrderText())).toList(),
-                    x, y + height + 12, DefaultTooltipPositioner.INSTANCE, source.getItem().get(DataComponents.TOOLTIP_STYLE), true);
+            var extra = Screen.getTooltipFromItem(mc, source.getItem()).stream().skip(1)
+                    .flatMap(c -> mc.font.split(c, Math.min(240, screen.width - 24)).stream())
+                    .map(ClientTooltipComponent::create).toList();
+            if (!extra.isEmpty()) g.tooltip(mc.font, extra,
+                    x, y + height + 12, DefaultTooltipPositioner.INSTANCE, source.getItem().get(DataComponents.TOOLTIP_STYLE), false);
         }
     }
     public static boolean click(AbstractContainerScreen<?> screen, MouseButtonEvent event) {

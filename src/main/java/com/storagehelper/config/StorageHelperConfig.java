@@ -2,6 +2,8 @@ package com.storagehelper.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonParser;
+import com.storagehelper.logic.ScrollSettings;
 import com.storagehelper.logic.SortMode;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
@@ -25,7 +27,8 @@ public final class StorageHelperConfig {
 	/** Inventory clicks sent per client tick while an operation runs (1-5). */
 	public int clicksPerTick = 1;
     /** Requested items per effective wheel unit, independent of click throughput. */
-    public double scrollItemsPerUnit = 8.0;
+    public double scrollItemsPerUnit = ScrollSettings.DEFAULT_ITEMS_PER_UNIT;
+    public int scrollSensitivityVersion = 1;
     /** Scroll-only packet budget per tick; other operations retain their pacing. */
     public int scrollClicksPerTick = 4;
 	/** Slightly darken chest slots that do not match the search. */
@@ -35,9 +38,14 @@ public final class StorageHelperConfig {
 		Path path = path();
 		if (Files.isRegularFile(path)) {
 			try (Reader reader = Files.newBufferedReader(path)) {
-				StorageHelperConfig cfg = GSON.fromJson(reader, StorageHelperConfig.class);
+				var json = JsonParser.parseReader(reader).getAsJsonObject();
+                boolean legacySensitivity = !json.has("scrollSensitivityVersion");
+                StorageHelperConfig cfg = GSON.fromJson(json, StorageHelperConfig.class);
 				if (cfg != null) {
+                    cfg.scrollItemsPerUnit = ScrollSettings.resolve(cfg.scrollItemsPerUnit, legacySensitivity);
+                    cfg.scrollSensitivityVersion = 1;
 					cfg.sanitize();
+                    if (legacySensitivity) cfg.save();
 					return cfg;
 				}
 			} catch (Exception e) {
@@ -73,7 +81,7 @@ public final class StorageHelperConfig {
 	}
 
     public double scrollItemsPerUnit() {
-        return Double.isFinite(scrollItemsPerUnit) ? Math.max(1, Math.min(32, scrollItemsPerUnit)) : 8;
+        return ScrollSettings.resolve(scrollItemsPerUnit, false);
     }
     public int scrollClicksPerTick() { return Math.max(1, Math.min(5, scrollClicksPerTick)); }
 

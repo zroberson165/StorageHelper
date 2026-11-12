@@ -7,15 +7,15 @@ class ScrollAccumulatorTest {
     @Test void smoothMotionScalesToQuantityWithoutMovingOnTinyInput() {
         var scroll = new ScrollAccumulator();
         int count = 0;
-        for (int i = 0; i < 30; i++) count += scroll.add(27, .1, i * 5L, 8);
-        assertEquals(24, count);
+        for (int i = 0; i < 30; i++) count += scroll.add(27, .1, i * 5L, 2);
+        assertEquals(6, count);
     }
     @Test void defaultSensitivityAndTinyMovements() {
         var s = new ScrollAccumulator();
-        assertEquals(0, s.add(27, .01, 0, 8));
+        assertEquals(0, s.add(27, .01, 0, 2));
         s.reset();
-        assertEquals(8, s.add(27, 1, 1, 8));
-        assertEquals(32, s.add(27, 4, 2, 8));
+        assertEquals(2, s.add(27, 1, 1, 2));
+        assertEquals(8, s.add(27, 4, 2, 2));
         assertEquals(4, s.add(27, 1, 3, 4));
     }
     @Test void sourceDirectionReleaseAndTimeoutDoNotShareFractions() {

@@ -46,7 +46,8 @@ Settings are stored in `config/storagehelper.json` (inside the game directory):
 ```json
 {
   "sortMode": "alphabetical",   // or "by_type"; also changed from the in-game selector
-  "scrollItemsPerUnit": 8.0,   // proportional wheel sensitivity (1-32)
+  "scrollItemsPerUnit": 2.0,   // proportional wheel sensitivity (1-32)
+  "scrollSensitivityVersion": 1, // migration marker; keep this when customizing
   "scrollClicksPerTick": 4,    // separate scroll click budget per tick (1-5)
   "clicksPerTick": 1,           // 1-5 inventory clicks per game tick while an operation runs
   "dimNonMatching": true        // darken chest slots that do not match the search
@@ -91,22 +92,26 @@ Import the folder as a Gradle project in IntelliJ IDEA or VS Code (Gradle for Ja
 
 ## Using the panel
 
-The panel sits to the right of the container (or to the left / hugging the screen edge when the window is too narrow) and re-positions itself on resize and GUI-scale changes.
+The search field sits above the container, aligned with its width. Compact 20-pixel action icons form a vertical column down the right side of the container, with a left-side fallback if needed. If a double chest leaves insufficient space above at a large GUI scale, search moves beside the container without covering titles or slots. Controls reposition on resize and GUI-scale changes; hover an icon for its action and sorting-mode tooltip.
 
 * **Deposit Matching** – moves matching items. Hover for a tooltip; matching hotbar items are included, armor/offhand/cursor are not. While it runs the button reads **Cancel**.
 * **Sort** – sorts the chest in the order shown on the selector below it. Reads **Cancel** while running.
-* **Order: A-Z / By Type** – click to toggle; the choice is saved.
-* **Search…** – type to highlight. `✕` clears. The counter shows "N matching" or "No matches". While the box is focused, keys go only to the box (no hotbar swaps, no `E` closing the chest); **Enter** or **Esc** leaves the box, a second **Esc** closes the chest. Clicking anywhere else also leaves the box.
+* **Order icon: A-Z / categories** – click to toggle; the choice is saved.
+* **Search…** – type to highlight. The cross icon clears. The counter shows "N matching" or "No matches". While the box is focused, keys go only to the box (no hotbar swaps, no `E` closing the chest); **Enter** or **Esc** leaves the box, a second **Esc** closes the chest. Clicking anywhere else also leaves the box.
 
-Both operations require an empty cursor and refuse to start while another one runs. Status messages appear under the search box.
+Both operations require an empty cursor and refuse to start while another one runs. Busy actions use disabled states and cancel icons. Operation outcomes are written only to the debug log; no status text, HUD messages, chat, or toasts are shown.
 
 ### Hover previews and precise wheel transfers
 
 - Hover any shulker-box item in your inventory or a supported container to see its 9×3 contents grid, with names, icons, and counts. This uses client-available item data; missing data is labeled rather than guessed. No placing or opening is needed.
 - Hover a bundle, move into its popup, and left-click a selectable entry to extract that stack to an empty cursor using vanilla selection and inventory clicks. Scroll inside the popup to see more entries. Entries beyond vanilla's selectable front portion are read-only; remove earlier stacks first. Creative-inventory popups are read-only.
-- Hold **Shift + scroll up over your inventory/hotbar** to deposit a proportional quantity, or **Shift + scroll down over the container** to withdraw. By default, one effective wheel unit requests 8 items and four units request 32. Tiny fractional trackpad motion accumulates; it does not move a stack immediately. Other directions do nothing. Up to 64 items can be queued; excess input is ignored. Release Shift or move away to cancel pending requests. Unstarted work expires after 200 ms without input; an active batch safely completes or returns its cursor.
+- Hold **Shift + scroll up over your inventory/hotbar** to deposit a proportional quantity, or **Shift + scroll down over the container** to withdraw. By default, one effective wheel unit requests 2 items. Fractional input accumulates, and a one-item source or remaining capacity still transfers that one item. Tiny fractional trackpad motion accumulates; it does not move a stack immediately. Other directions do nothing. Up to 64 items can be queued; excess input is ignored. Release Shift or move away to cancel pending requests. Unstarted work expires after 200 ms without input; an active batch safely completes or returns its cursor.
 
-Wheel transfers, Deposit Matching, and Sort share one operation lock. Scroll sensitivity (`scrollItemsPerUnit`, default 8) is independent of its throughput (`scrollClicksPerTick`, default 4, maximum 5). Whole-stack requests use vanilla quick-move; partial quantities use half-stack pickup, capped merges, and single clicks only for exact remainders. A 32-item request from a 64-item stack into an empty destination takes two clicks instead of 96. Arbitrary quantities can take more clicks; server validation and tick pacing still apply. Other operations retain `clicksPerTick`. Search retains its text when unfocused and supports clicking back into it, caret positioning, selection, and native platform clipboard shortcuts.
+Wheel transfers, Deposit Matching, and Sort share one operation lock. Scroll sensitivity (`scrollItemsPerUnit`, default 2) is independent of its throughput (`scrollClicksPerTick`, default 4, maximum 5). Whole-stack requests use vanilla quick-move; partial quantities use half-stack pickup, capped merges, and single clicks only for exact remainders. A 32-item request from a 64-item stack into an empty destination takes two clicks instead of 96. Arbitrary quantities can take more clicks; server validation and tick pacing still apply. Other operations retain `clicksPerTick`. Search retains its text when unfocused and supports clicking back into it, caret positioning, selection, and native platform clipboard shortcuts.
+
+Configurations without `scrollSensitivityVersion` migrate the previous default value of 8 to 2. Other legacy custom values are preserved; a legacy custom value of exactly 8 cannot be distinguished from the old default. Versioned settings, including a customized 8, retain their values.
+
+Bundle names appear only in the popup title. Supplementary lore and other tooltip lines are retained without repeating the title; tooltips for contained items are unchanged.
 
 See [interaction verification and manual checklist](docs/verification.md) for API details, limitations, and checks still needed on real servers and trackpads.
 
@@ -161,7 +166,7 @@ The normalised query is matched as a substring of each chest stack's displayed n
 
 ### Automated (run on every build)
 
-`./gradlew test` – 40 JUnit 5 tests over the pure logic, including a 600-case randomized sort fuzz (single and double chests, full and partly empty, mixed stack sizes, unstackables with differing components, bundles) that checks: termination within a click bound, no no-op clicks, no bundle-vs-occupied click, item totals unchanged, cursor empty at the end, final layout equal to the target; plus deposit candidate/room rules, category precedence, search matching, ordering determinism, fractional scrolling, bounded queues, and restriction-aware batch destination planning.
+`./gradlew test` – 45 JUnit 5 tests over the pure logic, including a 600-case randomized sort fuzz (single and double chests, full and partly empty, mixed stack sizes, unstackables with differing components, bundles) that checks: termination within a click bound, no no-op clicks, no bundle-vs-occupied click, item totals unchanged, cursor empty at the end, final layout equal to the target; plus deposit candidate/room rules, category precedence, search matching, ordering determinism, fractional scrolling, bounded queues, and restriction-aware batch destination planning.
 
 What the automated tests **do not** cover: anything that needs the game (rendering, input routing, real server validation, timing).
 
@@ -213,7 +218,7 @@ Sort
 Search
 - [ ] Mixed case, partial names ("cobb"), registry ids ("ender_pearl", "minecraft:"), custom names.
 - [ ] Empty query → normal rendering; no matches → "No matches"; counter correct.
-- [ ] Highlight keeps item and count readable; player inventory not highlighted; `✕` clears.
+- [ ] Highlight keeps item and count readable; player inventory not highlighted; The cross icon clears.
 - [ ] Typing digits/E/Q while focused does nothing to the inventory; Esc/Enter unfocus; second Esc closes.
 - [ ] Open a different chest → query is empty.
 

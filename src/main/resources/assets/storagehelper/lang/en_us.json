@@ -1,8 +1,8 @@
 {
 	"storagehelper.button.deposit": "Deposit Matching",
-	"storagehelper.button.deposit.tooltip": "Moves every item type already in this chest from your inventory into it. Matching hotbar items are included; armor, offhand and the item on your cursor are not.",
+	"storagehelper.button.deposit.tooltip": "Move matching items from your inventory and hotbar into this container. Shift-scroll up deposits quantities; down over the container withdraws them.",
 	"storagehelper.button.sort": "Sort",
-	"storagehelper.button.sort.tooltip": "Rearranges this chest's contents using the selected order. Your own inventory is never touched.",
+	"storagehelper.button.sort.tooltip": "Rearrange this container using the selected order. Your inventory is not sorted.",
 	"storagehelper.button.cancel": "Cancel",
 	"storagehelper.sortmode": "Order",
 	"storagehelper.sortmode.alphabetical": "A-Z",
@@ -10,7 +10,7 @@
 	"storagehelper.sortmode.tooltip.alphabetical": "Sort by item name.",
 	"storagehelper.sortmode.tooltip.by_type": "Tools & weapons, armor, ores & minerals, food & drinks, blocks, redstone, then everything else. Alphabetical within each group.",
 	"storagehelper.search.hint": "Search…",
-	"storagehelper.search.narration": "Search chest contents",
+	"storagehelper.search.narration": "Search container contents",
 	"storagehelper.search.clear": "Clear search",
 	"storagehelper.search.matches": "%s matching",
 	"storagehelper.search.one_match": "1 matching",
@@ -31,7 +31,7 @@
 	"storagehelper.status.sort.too_many": "Stopped after too many moves",
 	"storagehelper.status.sort.no_fit": "Stopped: items no longer fit",
 	"storagehelper.status.sort.bundles_full": "Bundles need one empty chest slot to sort",
-	"storagehelper.scroll.controls": "Shift + scroll up over your inventory to deposit; down over the container to withdraw. Proportional batches (default: 8 items per wheel unit). Other directions do nothing.",
+	"storagehelper.scroll.controls": "Shift-scroll up over your inventory to deposit; down over the container to withdraw. Default: 2 items per wheel unit. Other directions do nothing.",
 	"storagehelper.scroll.running": "Transferring…",
 	"storagehelper.scroll.done": "Transfer complete",
 	"storagehelper.scroll.full": "Destination cannot accept this item",
@@ -41,5 +41,9 @@
 	"storagehelper.bundle.hint": "Click an entry; scroll for more.",
 	"storagehelper.bundle.extract": "Left-click to take this stack to an empty cursor using vanilla bundle selection and right-click.",
 	"storagehelper.bundle.limited": "Read-only: outside vanilla’s selectable entries. Remove earlier stacks first.",
-	"storagehelper.bundle.readonly": "Read-only preview in the creative inventory."
+	"storagehelper.bundle.readonly": "Read-only preview in the creative inventory.",
+	"storagehelper.button.cancel.tooltip": "Cancel the current operation and safely return its cursor stack.",
+	"storagehelper.sortmode.current": "Order: %s",
+	"storagehelper.sortmode.toggle": "Click to switch sorting mode.",
+	"storagehelper.search.tooltip": "Search container item names or registry IDs. Click to edit; Escape leaves the field."
 }
