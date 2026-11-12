@@ -161,9 +161,40 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 			ctx.waitTick();
 			check(ctx.computeOnClient(mc -> mc.gui.screen() instanceof ContainerScreen), "first Escape should only unfocus the search box");
 			check(countMatches(ctx) == 3, "query should survive unfocusing");
+            // Regression: release focus by clicking away, then edit the existing query.
+            ctx.getInput().setCursorPos(4, 4);
+            ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+            ctx.waitTicks(10); // Separate clicks: double-click intentionally selects the word.
+            ctx.getInput().setCursorPos(box[0], box[1]);
+            ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+            ctx.getInput().typeChars("x");
+            ctx.waitTick();
+            check(countMatches(ctx) == 0, "refocused search must accept typing without clearing");
+            ctx.getInput().pressKey(InputConstants.KEY_BACKSPACE);
+            ctx.waitTick();
+            check(countMatches(ctx) == 3, "backspace after refocusing must restore the existing query: " + ctx.computeOnClient(mc -> Screens.getWidgets(mc.gui.screen()).stream().filter(w -> w instanceof EditBox).map(w -> ((EditBox)w).getValue() + ":" + ((EditBox)w).getCursorPosition() + ":" + w.isFocused()).toList()));
 			check(ctx.tryClickScreenButton("✕"), "clear button not found");
 			ctx.waitTick();
 			check(countMatches(ctx) == 0 && !searchActive(ctx), "clear button should reset the search");
+
+            // Wheel requests are counted in individual items, in both directions.
+            ctx.getInput().setCursorPos(4, 4);
+            ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+            moveToSlot(ctx, findSlot(ctx, "minecraft:stick"));
+            ctx.getInput().holdShift();
+            ctx.getInput().scroll(3);
+            ctx.waitTicks(20);
+            ctx.getInput().releaseShift();
+            waitForIdle(ctx, conn);
+            check(total(readChest(server, chestPos), "minecraft:stick") == 3, "three wheel steps must deposit exactly three items: " + readChest(server, chestPos));
+            moveToSlot(ctx, findSlot(ctx, "minecraft:stick"));
+            ctx.getInput().holdShift();
+            ctx.getInput().scroll(-2);
+            ctx.waitTicks(15);
+            ctx.getInput().releaseShift();
+            waitForIdle(ctx, conn);
+            check(total(readChest(server, chestPos), "minecraft:stick") == 1, "two wheel steps must withdraw exactly two items");
+            check(ctx.computeOnClient(mc -> mc.player.containerMenu.getCarried().isEmpty()), "wheel transfer must finish with an empty cursor");
 
 			// Second Escape closes the chest.
 			ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
@@ -174,10 +205,93 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 					&& total(finalChest, "minecraft:apple") == 3 && total(finalChest, "minecraft:diamond_sword") == 1,
 					"items changed after closing: " + finalChest);
 			ctx.takeScreenshot("storagehelper-6-closed");
+            // All vanilla colors share ShulkerBoxScreen; exercise the actual placed menus.
+            String[] colors = {"", "white_", "orange_", "magenta_", "light_blue_", "yellow_", "lime_", "pink_", "gray_", "light_gray_", "cyan_", "purple_", "blue_", "brown_", "green_", "red_", "black_"};
+            for (String color : colors) {
+                server.runCommand(fmt("setblock %d %d %d minecraft:%sshulker_box", chestPos.getX(), chestPos.getY(), chestPos.getZ(), color));
+                chest(server, chestPos, 0, "minecraft:stone", 3);
+                chest(server, chestPos, 3, "minecraft:apple", 2);
+                conn.waitForClientboundPackets();
+                ctx.getInput().lookAt(chestPos);
+                ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_RIGHT);
+                ctx.waitForScreen(net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen.class);
+                check(ctx.computeOnClient(mc -> ChestSessions.forScreen(mc.gui.screen()) != null), "missing shulker session: " + color);
+                ctx.clickScreenButton("storagehelper.button.sort");
+                waitForIdle(ctx, conn);
+                expectPrefix(readChest(server, chestPos), "minecraft:apple x2", "minecraft:stone x3", "-");
+                if (color.equals("black_")) {
+                    server.runCommand("item replace entity @a hotbar.7 with minecraft:purple_shulker_box[container=[{slot:0,item:{id:'minecraft:diamond',count:7}},{slot:26,item:{id:'minecraft:apple',count:2}}]] 1");
+                    server.runCommand("item replace entity @a hotbar.8 with minecraft:bundle[bundle_contents=[{id:'minecraft:apple',count:3},{id:'minecraft:stone',count:5}]] 1");
+                    conn.waitForClientboundPackets();
+                    ctx.waitTicks(2);
+                    moveToSlot(ctx, findSlot(ctx, "minecraft:purple_shulker_box"));
+                    ctx.takeScreenshot("storagehelper-7-shulker-preview");
+                    // Actual shulker slot rules reject a nested shulker, without picking it up.
+                    ctx.getInput().holdShift();
+                    ctx.getInput().scroll(1);
+                    ctx.waitTicks(4);
+                    ctx.getInput().releaseShift();
+                    waitForIdle(ctx, conn);
+                    check(total(readChest(server, chestPos), "minecraft:purple_shulker_box") == 0, "wheel transfer inserted a nested shulker");
+                    check(ctx.computeOnClient(mc -> mc.player.containerMenu.getCarried().isEmpty()), "prohibited transfer changed cursor");
+                    int bundleSlot = findSlot(ctx, "minecraft:bundle");
+                    moveToSlot(ctx, bundleSlot);
+                    ctx.takeScreenshot("storagehelper-8-bundle-popup");
+                    double[] entry = ctx.computeOnClient(mc -> {
+                        var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen();
+                        var a = (com.storagehelper.mixin.AbstractContainerScreenAccessor)screen;
+                        Slot slot = screen.getMenu().getSlot(bundleSlot);
+                        int columns = Math.max(1, Math.min(6, (screen.width - 20) / 20));
+                        int rows = Math.max(1, Math.min(3, (screen.height - 90) / 20));
+                        int width = columns * 20 + 8, height = 18 + rows * 20 + 30;
+                        int sx = a.storagehelper$getLeftPos() + slot.x, sy = a.storagehelper$getTopPos() + slot.y;
+                        int px = sx + 20;
+                        if (px + width > screen.width - 4) px = sx - width - 4;
+                        px = Math.max(4, Math.min(px, screen.width - width - 4));
+                        int py = Math.max(4, Math.min(sy, screen.height - height - 4));
+                        double scale = mc.getWindow().getGuiScale();
+                        return new double[]{(px + 4 + 20 + 8) * scale, (py + 18 + 8) * scale};
+                    });
+                    ctx.getInput().setCursorPos(entry[0], entry[1]);
+                    ctx.waitTick();
+                    ctx.takeScreenshot("storagehelper-9-bundle-selection");
+                    ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+                    conn.waitForServerboundPackets();
+                    conn.waitForClientboundPackets();
+                    check(server.computeOnServer(srv -> describe(srv.getPlayerList().getPlayers().getFirst().containerMenu.getCarried())).equals("minecraft:stone x5"), "bundle popup did not extract the selected stack server-side");
+                    check(server.computeOnServer(srv -> srv.getPlayerList().getPlayers().getFirst().containerMenu.getSlot(bundleSlot).getItem().get(net.minecraft.core.component.DataComponents.BUNDLE_CONTENTS).itemCopies().map(StorageHelperGameTest::describe).toList()).equals(List.of("minecraft:apple x3")), "bundle remaining contents changed unexpectedly");
+                    // Place the extracted stack before closing the screen.
+                    moveToSlot(ctx, 27);
+                    ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+                }
+
+                ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
+                ctx.waitForScreen(null);
+            }
+
 		}
 	}
 
 	// ------------------------------------------------------------------ helpers
+
+    private static int findSlot(ClientGameTestContext ctx, String id) {
+        return ctx.computeOnClient(mc -> {
+            for (Slot slot : mc.player.containerMenu.slots)
+                if (!slot.getItem().isEmpty() && BuiltInRegistries.ITEM.getKey(slot.getItem().getItem()).toString().equals(id)) return slot.index;
+            throw new AssertionError("missing slot: " + id);
+        });
+    }
+    private static void moveToSlot(ClientGameTestContext ctx, int index) {
+        double[] point = ctx.computeOnClient(mc -> {
+            var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen();
+            var a = (com.storagehelper.mixin.AbstractContainerScreenAccessor)screen;
+            Slot slot = screen.getMenu().getSlot(index);
+            double scale = mc.getWindow().getGuiScale();
+            return new double[]{(a.storagehelper$getLeftPos() + slot.x + 8) * scale, (a.storagehelper$getTopPos() + slot.y + 8) * scale};
+        });
+        ctx.getInput().setCursorPos(point[0], point[1]);
+        ctx.waitTick();
+    }
 
 	private static void chest(TestServerContext server, BlockPos pos, int slot, String item, int count) {
 		server.runCommand(fmt("item replace block %d %d %d container.%d with %s %d", pos.getX(), pos.getY(), pos.getZ(), slot, item, count));
@@ -250,7 +364,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 				return -1;
 			}
 			int n = 0;
-			for (int i = 0; i < s.menu().getRowCount() * 9; i++) {
+			for (int i = 0; i < com.storagehelper.chest.ChestSnapshots.chestSlotCount(s.menu()); i++) {
 				if (s.isMatch(i)) {
 					n++;
 				}

@@ -30,5 +30,16 @@
 	"storagehelper.status.sort.changed": "Chest kept changing, stopped",
 	"storagehelper.status.sort.too_many": "Stopped after too many moves",
 	"storagehelper.status.sort.no_fit": "Stopped: items no longer fit",
-	"storagehelper.status.sort.bundles_full": "Bundles need one empty chest slot to sort"
+	"storagehelper.status.sort.bundles_full": "Bundles need one empty chest slot to sort",
+	"storagehelper.scroll.controls": "Shift + scroll up over your inventory: deposit one item per step. Shift + scroll down over the container: withdraw one. Other directions do nothing.",
+	"storagehelper.scroll.running": "Transferring…",
+	"storagehelper.scroll.done": "Transfer complete",
+	"storagehelper.scroll.full": "Destination cannot accept this item",
+	"storagehelper.preview.empty": "Empty shulker box",
+	"storagehelper.preview.unavailable": "No contents reported: empty or unavailable",
+	"storagehelper.bundle.empty": "Empty bundle",
+	"storagehelper.bundle.hint": "Click an entry; scroll for more.",
+	"storagehelper.bundle.extract": "Left-click to take this stack to an empty cursor using vanilla bundle selection and right-click.",
+	"storagehelper.bundle.limited": "Read-only: outside vanilla’s selectable entries. Remove earlier stacks first.",
+	"storagehelper.bundle.readonly": "Read-only preview in the creative inventory."
 }

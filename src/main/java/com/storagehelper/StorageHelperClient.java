@@ -20,7 +20,11 @@ public final class StorageHelperClient implements ClientModInitializer {
 		config = StorageHelperConfig.load();
 		ChestDetector.init();
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) ->
-				ChestSessions.onScreenInit(client, screen, config));
+				{
+                    ChestSessions.onScreenInit(client, screen, config);
+                    com.storagehelper.gui.HoverContents.reset(screen);
+                    ScreenEvents.remove(screen).register(s -> com.storagehelper.gui.HoverContents.reset(s));
+                });
 		LOGGER.info("[storagehelper] Storage Helper ready (sort mode: {}, {} click(s)/tick)",
 				config.sortMode().id(), config.clicksPerTick());
 	}

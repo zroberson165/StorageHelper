@@ -3,6 +3,10 @@ package com.storagehelper.chest;
 import com.storagehelper.chest.op.ChestOperation;
 import com.storagehelper.chest.op.DepositOperation;
 import com.storagehelper.chest.op.SortOperation;
+import com.storagehelper.chest.op.ScrollTransferOperation;
+import com.storagehelper.logic.ScrollAccumulator;
+import com.storagehelper.gui.ScreenSlots;
+import com.storagehelper.gui.HoverContents;
 import com.storagehelper.config.StorageHelperConfig;
 import com.storagehelper.logic.SearchMatcher;
 import com.storagehelper.logic.SortMode;
@@ -68,6 +72,7 @@ public final class ChestSession {
 	private @Nullable ChestOperation operation;
 	private Component status = Component.empty();
 	private boolean closed;
+	private final ScrollAccumulator scroll = new ScrollAccumulator();
 
 	ChestSession(Minecraft mc, AbstractContainerScreen<?> screen, StorageHelperConfig config) {
 		this.mc = mc;
@@ -121,6 +126,12 @@ public final class ChestSession {
 			return;
 		}
 		refreshMatches();
+        var hovered = ScreenSlots.at(screen, mc.mouseHandler.getScaledXPos(mc.getWindow()), mc.mouseHandler.getScaledYPos(mc.getWindow()));
+        if (!ScreenSlots.shiftDown() || hovered == null || hovered.index != scroll.source() || isSearchFocused()
+                || HoverContents.pointerInside(screen)) {
+            scroll.reset();
+            if (operation instanceof ScrollTransferOperation transfer) transfer.requestCancel();
+        }
 		if (operation != null) {
 			operation.tick();
 			if (operation.isFinished()) {
@@ -207,6 +218,7 @@ public final class ChestSession {
 		EditBox box = new EditBox(font, l.x(), y, l.width() - 16, 18, previous,
 				Component.translatable("storagehelper.search.narration"));
 		box.setMaxLength(64);
+        box.setTooltip(Tooltip.create(Component.translatable("storagehelper.scroll.controls")));
 		box.setHint(Component.translatable("storagehelper.search.hint"));
 		if (previous == null && !query.isEmpty()) {
 			box.setValue(query);
@@ -315,14 +327,39 @@ public final class ChestSession {
 		refreshMatches();
 	}
 
-	private void unfocusSearch() {
-		if (searchBox != null && searchBox.isFocused()) {
-			searchBox.setFocused(false);
-			if (screen.getFocused() == searchBox) {
-				screen.clearFocus();
-			}
-		}
-	}
+    private void unfocusSearch() {
+        // Clear the owner before the widget. setFocused() ignores reassignment to the
+        // same child, so leaving a stale child pointer makes the next click fail.
+        if (screen.getFocused() == searchBox) screen.setFocused(null);
+        else if (searchBox != null) searchBox.setFocused(false);
+    }
+
+    public boolean isSearchFocused() { return searchBox != null && searchBox.isFocused(); }
+
+    public boolean onScroll(double x, double y, double delta) {
+        if (!ScreenSlots.shiftDown()) { scroll.reset(); return false; }
+        if (isSearchFocused()) { scroll.reset(); return true; }
+        for (AbstractWidget widget : ourWidgets) if (widget.isMouseOver(x, y)) { scroll.reset(); return true; }
+        var source = ScreenSlots.at(screen, x, y);
+        if (source == null) { scroll.reset(); return true; }
+        int boundary = ChestSnapshots.chestSlotCount(menu);
+        boolean playerSource = source.index >= boundary;
+        if ((playerSource && delta <= 0) || (!playerSource && delta >= 0)) {
+            scroll.reset();
+            if (operation instanceof ScrollTransferOperation transfer) transfer.requestCancel();
+            setStatus(Component.translatable("storagehelper.scroll.controls"));
+            return true;
+        }
+        if (operation instanceof ScrollTransferOperation transfer) {
+            if (transfer.source() == source.index) transfer.enqueue(scroll.add(source.index, delta, System.currentTimeMillis()));
+            else { transfer.requestCancel(); scroll.reset(); }
+            return true;
+        }
+        if (operation != null || !menu.getCarried().isEmpty() || !source.hasItem()) { scroll.reset(); return true; }
+        int count = scroll.add(source.index, delta, System.currentTimeMillis());
+        if (count > 0) startOperation(new ScrollTransferOperation(mc, menu, source.index, playerSource, count, config.clicksPerTick()));
+        return true;
+    }
 
 	private void refreshMatches() {
 		int n = ChestSnapshots.chestSlotCount(menu);
@@ -404,6 +441,10 @@ public final class ChestSession {
 	private boolean allowMouseClick(MouseButtonEvent event) {
 		double x = event.x();
 		double y = event.y();
+        if (searchBox != null && searchBox.isMouseOver(x, y)) {
+            screen.setFocused(searchBox);
+            searchBox.setFocused(true);
+        }
 		if (searchBox != null && searchBox.isFocused() && !searchBox.isMouseOver(x, y)) {
 			unfocusSearch();
 		}

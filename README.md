@@ -33,7 +33,7 @@ These versions were checked on 2026-11-11 against Mojang's `piston-meta` manifes
 
 1. Install the Fabric Loader for Minecraft 26.3 with the official installer (https://fabricmc.net/use/installer/) and start the game once with the new "fabric-loader-26.3" profile so the `mods` folder is created.
 2. Download **Fabric API** for 26.3 (https://modrinth.com/mod/fabric-api or CurseForge) and put the jar in `mods`.
-3. Put `storagehelper-1.0.0.jar` (from `build/libs`, see below) in the same `mods` folder:
+3. Put `storagehelper-1.1.0.jar` (from `build/libs`, see below) in the same `mods` folder:
    * macOS: `~/Library/Application Support/minecraft/mods`
    * Windows: `%APPDATA%\.minecraft\mods`
    * Linux: `~/.minecraft/mods`
@@ -70,8 +70,8 @@ cd StorageHelper
 
 Outputs in `build/libs/`:
 
-* `storagehelper-1.0.0.jar` – **the distributable mod** (install this).
-* `storagehelper-1.0.0-sources.jar` – sources, not needed for playing.
+* `storagehelper-1.1.0.jar` – **the distributable mod** (install this).
+* `storagehelper-1.1.0-sources.jar` – sources, not needed for playing.
 
 The build runs the unit tests (`./gradlew test` runs them alone). Reports land in `build/reports/tests/test/index.html`.
 
@@ -97,6 +97,17 @@ The panel sits to the right of the container (or to the left / hugging the scree
 * **Search…** – type to highlight. `✕` clears. The counter shows "N matching" or "No matches". While the box is focused, keys go only to the box (no hotbar swaps, no `E` closing the chest); **Enter** or **Esc** leaves the box, a second **Esc** closes the chest. Clicking anywhere else also leaves the box.
 
 Both operations require an empty cursor and refuse to start while another one runs. Status messages appear under the search box.
+
+### Hover previews and precise wheel transfers
+
+- Hover any shulker-box item in your inventory or a supported container to see its 9×3 contents grid, with names, icons, and counts. This uses client-available item data; missing data is labeled rather than guessed. No placing or opening is needed.
+- Hover a bundle, move into its popup, and left-click a selectable entry to extract that stack to an empty cursor using vanilla selection and inventory clicks. Scroll inside the popup to see more entries. Entries beyond vanilla's selectable front portion are read-only; remove earlier stacks first. Creative-inventory popups are read-only.
+- Hold **Shift + scroll up over your inventory/hotbar** to deposit one item per step, or **Shift + scroll down over the container** to withdraw one. Other directions do nothing. Fractional trackpad motion accumulates. A maximum of 8 requests per event and 32 queued items prevents large bursts; excess input is ignored. Release Shift or move away to cancel pending requests.
+
+Wheel transfers, Deposit Matching, and Sort share one operation lock and the configured click pacing. Search retains its text when unfocused and supports clicking back into it, caret positioning, selection, and native platform clipboard shortcuts.
+
+See [interaction verification and manual checklist](docs/verification.md) for API details, limitations, and checks still needed on real servers and trackpads.
+
 
 ---
 
@@ -148,7 +159,7 @@ The normalised query is matched as a substring of each chest stack's displayed n
 
 ### Automated (run on every build)
 
-`./gradlew test` – 25 JUnit 5 tests over the pure logic, including a 600-case randomized sort fuzz (single and double chests, full and partly empty, mixed stack sizes, unstackables with differing components, bundles) that checks: termination within a click bound, no no-op clicks, no bundle-vs-occupied click, item totals unchanged, cursor empty at the end, final layout equal to the target; plus deposit candidate/room rules, category precedence, search matching, and ordering determinism.
+`./gradlew test` – 33 JUnit 5 tests over the pure logic, including a 600-case randomized sort fuzz (single and double chests, full and partly empty, mixed stack sizes, unstackables with differing components, bundles) that checks: termination within a click bound, no no-op clicks, no bundle-vs-occupied click, item totals unchanged, cursor empty at the end, final layout equal to the target; plus deposit candidate/room rules, category precedence, search matching, ordering determinism, fractional scrolling, bounded queues, and restriction-aware one-item destination planning.
 
 What the automated tests **do not** cover: anything that needs the game (rendering, input routing, real server validation, timing).
 

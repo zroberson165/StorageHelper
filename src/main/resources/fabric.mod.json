@@ -3,7 +3,7 @@
 	"id": "storagehelper",
 	"version": "${version}",
 	"name": "Storage Helper",
-	"description": "Deposit matching items, sort chests, and search chest contents with highlights. Client-side only.",
+	"description": "Deposit, sort, search, preview shulkers, inspect bundles, and transfer individual items in supported inventories. Client-side only.",
 	"authors": ["Storage Helper contributors"],
 	"contact": {},
 	"license": "MIT",
