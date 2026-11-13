@@ -1,6 +1,7 @@
 package com.storagehelper.chest.op;
 
 import com.storagehelper.chest.ChestSnapshots;
+import com.storagehelper.chest.InventoryRegion;
 import com.storagehelper.logic.ClickSimulator;
 import com.storagehelper.logic.SortPlanner;
 import com.storagehelper.logic.Stack;
@@ -26,11 +27,12 @@ import java.util.List;
  * then an empty slot) and only then stops, so the cursor is empty at the end.
  */
 public final class SortOperation extends ChestOperation {
-	private static final int SETTLE_TICKS = 6;
+	private static final int SETTLE_TICKS = 2;
 	private static final int MAX_RECOMPUTES = 8;
 	private static final int MAX_VERIFY_ROUNDS = 3;
 
 	private final Comparator<StackType> order;
+    private final InventoryRegion region;
 	private List<Stack> target;
 	private int recomputes;
 	private int verifyRounds;
@@ -41,9 +43,25 @@ public final class SortOperation extends ChestOperation {
 	private Component stopMessage;
 
 	public SortOperation(Minecraft mc, AbstractContainerMenu menu, int clicksPerTick, Comparator<StackType> order) {
-		super(mc, menu, clicksPerTick);
+        this(mc, InventoryRegion.container(menu), clicksPerTick, order);
+    }
+    public SortOperation(Minecraft mc, InventoryRegion region, int clicksPerTick, Comparator<StackType> order) {
+        super(mc, region.menu(), clicksPerTick);
+        this.region = region;
 		this.order = order;
 	}
+
+    public boolean sortsPlayerInventory() { return region.playerMain(); }
+    private boolean clickRegion(int logical) {
+        var slot = menu.getSlot(region.menuSlot(logical));
+        if (mc.player == null || !slot.mayPickup(mc.player)
+                || !menu.getCarried().isEmpty() && (!slot.mayPlace(menu.getCarried())
+                || menu.getCarried().getCount() > slot.getMaxStackSize(menu.getCarried()))) {
+            stopMessage = t("status.sort.changed");
+            return false;
+        }
+        return click(region.menuSlot(logical), 0, ContainerInput.PICKUP);
+    }
 
 	@Override
 	public Component runningLabel() {
@@ -56,14 +74,15 @@ public final class SortOperation extends ChestOperation {
 			finish(t("status.cursor_not_empty"));
 			return;
 		}
-		List<Stack> slots = ChestSnapshots.chestSlots(menu);
+        if (region.playerMain() && region.slots().size() != 27) { stopSafely(t("status.sort.changed")); return; }
+		List<Stack> slots = region.snapshot();
 		if (SortPlanner.countStacks(slots) == 0) {
 			finish(t("status.sort.empty"));
 			return;
 		}
 		target = SortPlanner.computeTarget(slots, null, order);
 		if (target == null) {
-			finish(t("status.sort.no_fit"));
+			stopSafely(t("status.sort.no_fit"));
 			return;
 		}
 		if (SortPlanner.matches(slots, target)) {
@@ -90,13 +109,13 @@ public final class SortOperation extends ChestOperation {
 		}
 		if (settleTicks == 0) {
 			settleTicks = -1;
-			List<Stack> slots = ChestSnapshots.chestSlots(menu);
+			List<Stack> slots = region.snapshot();
 			if (ChestSnapshots.carried(menu) == null && SortPlanner.matches(slots, target)) {
 				finish(t("status.sort.done", SortPlanner.countStacks(target)));
 				return;
 			}
 			if (++verifyRounds > MAX_VERIFY_ROUNDS) {
-				finish(t("status.sort.changed"));
+				stopSafely(t("status.sort.changed"));
 				return;
 			}
 			// A late server correction changed something: keep going from the live state.
@@ -104,7 +123,7 @@ public final class SortOperation extends ChestOperation {
 
 		int clicks = 0;
 		while (clicks < clicksPerTick) {
-			List<Stack> slots = ChestSnapshots.chestSlots(menu);
+			List<Stack> slots = region.snapshot();
 			Stack cursor = ChestSnapshots.carried(menu);
 
 			// Full chest with bundles: free a slot by consolidating ordinary stacks first.
@@ -120,10 +139,10 @@ public final class SortOperation extends ChestOperation {
 					return;
 				}
 				if (++totalClicks > maxClicks) {
-					finish(t("status.sort.too_many"));
+					stopSafely(t("status.sort.too_many"));
 					return;
 				}
-				if (!click(slot, 0, ContainerInput.PICKUP)) {
+				if (!clickRegion(slot)) {
 					return;
 				}
 				clicks++;
@@ -156,10 +175,10 @@ public final class SortOperation extends ChestOperation {
 						continue;
 					}
 					if (++totalClicks > maxClicks) {
-						finish(t("status.sort.too_many"));
+						stopSafely(t("status.sort.too_many"));
 						return;
 					}
-					if (!click(step.slot(), 0, ContainerInput.PICKUP)) {
+					if (!clickRegion(step.slot())) {
 						return;
 					}
 					clicks++;
@@ -168,14 +187,18 @@ public final class SortOperation extends ChestOperation {
 		}
 	}
 
+    private void stopSafely(Component message) {
+        if (cursorEmpty()) finish(message); else stopMessage = message;
+    }
+
 	private boolean recomputeTarget(List<Stack> slots, Stack cursor) {
 		if (++recomputes > MAX_RECOMPUTES) {
-			finish(t("status.sort.changed"));
+			stopSafely(t("status.sort.changed"));
 			return false;
 		}
 		target = SortPlanner.computeTarget(slots, cursor, order);
 		if (target == null) {
-			finish(t("status.sort.no_fit"));
+			stopSafely(t("status.sort.no_fit"));
 			return false;
 		}
 		return true;
@@ -187,12 +210,12 @@ public final class SortOperation extends ChestOperation {
 			finish(doneMessage);
 			return;
 		}
-		int slot = SortPlanner.parkCursorSlot(ChestSnapshots.chestSlots(menu), cursor);
+		int slot = SortPlanner.parkCursorSlot(region.snapshot(), cursor);
 		if (slot < 0 || ++totalClicks > maxClicks + 20) {
 			finish(t("status.stopped_holding"));
 			return;
 		}
-		click(slot, 0, ContainerInput.PICKUP);
+		clickRegion(slot);
 		// Re-evaluated next tick: a partial merge may leave a remainder on the cursor.
 	}
 }

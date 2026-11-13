@@ -1,6 +1,6 @@
 {
 	"storagehelper.button.deposit": "Deposit Matching",
-	"storagehelper.button.deposit.tooltip": "Move matching items from your inventory and hotbar into this container. Shift-scroll up deposits quantities; down over the container withdraws them.",
+	"storagehelper.button.deposit.tooltip": "Move matching items from your inventory and hotbar into this container. Shift-scroll DOWN deposits; UP over your inventory returns the remembered deposit.",
 	"storagehelper.button.sort": "Sort",
 	"storagehelper.button.sort.tooltip": "Rearrange this container using the selected order. Your inventory is not sorted.",
 	"storagehelper.button.cancel": "Cancel",
@@ -31,7 +31,7 @@
 	"storagehelper.status.sort.too_many": "Stopped after too many moves",
 	"storagehelper.status.sort.no_fit": "Stopped: items no longer fit",
 	"storagehelper.status.sort.bundles_full": "Bundles need one empty chest slot to sort",
-	"storagehelper.scroll.controls": "Shift-scroll up over your inventory to deposit; down over the container to withdraw. Default: 2 items per wheel unit. Other directions do nothing.",
+	"storagehelper.scroll.controls": "Shift-scroll DOWN over your inventory to deposit; UP over the container to withdraw (2 items/unit). UP anywhere in your inventory returns the last deposit; DOWN in the container returns the last withdrawal.",
 	"storagehelper.scroll.running": "Transferring…",
 	"storagehelper.scroll.done": "Transfer complete",
 	"storagehelper.scroll.full": "Destination cannot accept this item",
@@ -45,5 +45,7 @@
 	"storagehelper.button.cancel.tooltip": "Cancel the current operation and safely return its cursor stack.",
 	"storagehelper.sortmode.current": "Order: %s",
 	"storagehelper.sortmode.toggle": "Click to switch sorting mode.",
-	"storagehelper.search.tooltip": "Search container item names or registry IDs. Click to edit; Escape leaves the field."
+	"storagehelper.search.tooltip": "Search container item names or registry IDs. Click to edit; Escape leaves the field.",
+	"storagehelper.button.player_sort": "Sort Player Inventory",
+	"storagehelper.button.player_sort.tooltip": "Sort only your 27 main storage slots using the selected order. Hotbar, armor, offhand, and crafting slots stay untouched. Click again to cancel."
 }

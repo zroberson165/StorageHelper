@@ -201,14 +201,14 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
             ctx.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
             moveToSlot(ctx, findSlot(ctx, "minecraft:stick"));
             ctx.getInput().holdShift();
-            ctx.getInput().scroll(4);
+            ctx.getInput().scroll(-4);
             ctx.waitTicks(20);
             ctx.getInput().releaseShift();
             waitForIdle(ctx, conn);
             check(total(readChest(server, chestPos), "minecraft:stick") == 8, "four wheel units must deposit exactly eight items: " + readChest(server, chestPos));
             moveToSlot(ctx, findSlot(ctx, "minecraft:stick"));
             ctx.getInput().holdShift();
-            ctx.getInput().scroll(-2);
+            ctx.getInput().scroll(2);
             ctx.waitTicks(15);
             ctx.getInput().releaseShift();
             waitForIdle(ctx, conn);
@@ -216,20 +216,20 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
             check(ctx.computeOnClient(mc -> mc.player.containerMenu.getCarried().isEmpty()), "wheel transfer must finish with an empty cursor");
             moveToSlot(ctx, ctx.computeOnClient(mc -> mc.player.containerMenu.slots.stream().filter(slot -> slot.container == mc.player.getInventory() && slot.getItem().is(net.minecraft.world.item.Items.STICK)).findFirst().orElseThrow().index));
             ctx.getInput().holdShift();
-            ctx.getInput().scroll(32);
+            ctx.getInput().scroll(-32);
             ctx.waitTicks(6);
             ctx.getInput().releaseShift();
             waitForIdle(ctx, conn);
             check(total(readChest(server, chestPos), "minecraft:stick") == 64, "whole-stack request must fill the existing partial stack");
             moveToSlot(ctx, findSlot(ctx, "minecraft:stick"));
             ctx.getInput().holdShift();
-            ctx.getInput().scroll(-.5);
+            ctx.getInput().scroll(.5);
             ctx.waitTicks(10);
             ctx.getInput().releaseShift();
             waitForIdle(ctx, conn);
             check(total(readChest(server, chestPos), "minecraft:stick") == 63, "half-unit gesture must withdraw exactly one item");
             moveToSlot(ctx, ctx.computeOnClient(mc -> mc.player.containerMenu.slots.stream().filter(slot -> slot.container == mc.player.getInventory() && slot.getItem().is(net.minecraft.world.item.Items.STICK)).findFirst().orElseThrow().index));
-            ctx.getInput().holdShift(); ctx.getInput().scroll(1); ctx.waitTicks(8); ctx.getInput().releaseShift();
+            ctx.getInput().holdShift(); ctx.getInput().scroll(-1); ctx.waitTicks(8); ctx.getInput().releaseShift();
             waitForIdle(ctx, conn);
             check(total(readChest(server, chestPos), "minecraft:stick") == 64, "a two-item request with one available item must transfer that one item");
             // A shulker item in a chest uses the same native border hit-test.
@@ -313,7 +313,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
 
                     // Actual shulker slot rules reject a nested shulker, without picking it up.
                     ctx.getInput().holdShift();
-                    ctx.getInput().scroll(1);
+                    ctx.getInput().scroll(-1);
                     ctx.waitTicks(4);
                     ctx.getInput().releaseShift();
                     waitForIdle(ctx, conn);
@@ -383,6 +383,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
                 ctx.tryClickScreenButton("storagehelper.search.clear"); ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
             }
             ctx.getInput().pressKey(InputConstants.KEY_ESCAPE); ctx.waitForScreen(null);
+            AdvancedInteractions.run(ctx, sp, chestPos);
 		}
 	}
 
@@ -393,7 +394,7 @@ public final class StorageHelperGameTest implements FabricClientGameTest {
             var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?>)mc.gui.screen();
             var a = (com.storagehelper.mixin.AbstractContainerScreenAccessor)screen;
             var actions = Screens.getWidgets(screen).stream()
-                    .filter(w -> w instanceof com.storagehelper.gui.IconButton icon && icon.icon() != com.storagehelper.gui.IconButton.Icon.CLEAR).toList();
+                    .filter(w -> w instanceof com.storagehelper.gui.IconButton icon && icon.icon() != com.storagehelper.gui.IconButton.Icon.CLEAR && icon.icon() != com.storagehelper.gui.IconButton.Icon.PLAYER_SORT).toList();
             check(actions.size() == 3, "all three action icons must remain available");
             for (int i = 1; i < actions.size(); i++) {
                 check(actions.get(i).getX() == actions.get(0).getX(), "action icons must form one vertical column");

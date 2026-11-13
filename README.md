@@ -6,6 +6,7 @@ A **client-side Fabric mod for Minecraft Java Edition 26.3** that makes chest st
 |---|---|
 | **Deposit Matching** | One click moves every item type that is already in the chest from your inventory and hotbar into it (partial stacks topped up first, then empty slots; overflow stays with you). |
 | **Sort** | Physically rearranges the chest contents (never your inventory) either **A-Z** or **By Type**, consolidating partial stacks. The result persists because the items really move. |
+| **Player Sort** | Sort only the 27 main player-inventory slots, leaving hotbar, equipment, offhand, crafting slots, and the container untouched. Available beside player storage in supported containers and in the survival inventory screen. |
 | **Search** | A search box highlights matching chest slots live as you type (names and registry ids, case-insensitive), with a match counter and a clear button. |
 
 It works in single-player and on ordinary vanilla/Paper/Fabric servers **without** being installed on the server: every change is made through normal, server-validated inventory clicks, exactly as if you had clicked the slots yourself.
@@ -33,7 +34,7 @@ These versions were checked on 2026-11-11 against Mojang's `piston-meta` manifes
 
 1. Install the Fabric Loader for Minecraft 26.3 with the official installer (https://fabricmc.net/use/installer/) and start the game once with the new "fabric-loader-26.3" profile so the `mods` folder is created.
 2. Download **Fabric API** for 26.3 (https://modrinth.com/mod/fabric-api or CurseForge) and put the jar in `mods`.
-3. Put `storagehelper-1.1.1.jar` (from `build/libs`, see below) in the same `mods` folder:
+3. Put `storagehelper-1.2.0.jar` (from `build/libs`, see below) in the same `mods` folder:
    * macOS: `~/Library/Application Support/minecraft/mods`
    * Windows: `%APPDATA%\.minecraft\mods`
    * Linux: `~/.minecraft/mods`
@@ -49,7 +50,8 @@ Settings are stored in `config/storagehelper.json` (inside the game directory):
   "scrollItemsPerUnit": 2.0,   // proportional wheel sensitivity (1-32)
   "scrollSensitivityVersion": 1, // migration marker; keep this when customizing
   "scrollClicksPerTick": 4,    // separate scroll click budget per tick (1-5)
-  "clicksPerTick": 1,           // 1-5 inventory clicks per game tick while an operation runs
+  "sortClicksPerTick": 4,      // shared container/player sorting budget, 1-5
+  "clicksPerTick": 1,           // 1-5 Deposit Matching clicks per game tick
   "dimNonMatching": true        // darken chest slots that do not match the search
 }
 ```
@@ -73,8 +75,8 @@ cd StorageHelper
 
 Outputs in `build/libs/`:
 
-* `storagehelper-1.1.1.jar` – **the distributable mod** (install this).
-* `storagehelper-1.1.1-sources.jar` – sources, not needed for playing.
+* `storagehelper-1.2.0.jar` – **the distributable mod** (install this).
+* `storagehelper-1.2.0-sources.jar` – sources, not needed for playing.
 
 The build runs the unit tests (`./gradlew test` runs them alone). Reports land in `build/reports/tests/test/index.html`.
 
@@ -105,9 +107,17 @@ Both operations require an empty cursor and refuse to start while another one ru
 
 - Hover any shulker-box item in your inventory or a supported container to see its 9×3 contents grid, with names, icons, and counts. This uses client-available item data; missing data is labeled rather than guessed. No placing or opening is needed.
 - Hover a bundle, move into its popup, and left-click a selectable entry to extract that stack to an empty cursor using vanilla selection and inventory clicks. Scroll inside the popup to see more entries. Entries beyond vanilla's selectable front portion are read-only; remove earlier stacks first. Creative-inventory popups are read-only.
-- Hold **Shift + scroll up over your inventory/hotbar** to deposit a proportional quantity, or **Shift + scroll down over the container** to withdraw. By default, one effective wheel unit requests 2 items. Fractional input accumulates, and a one-item source or remaining capacity still transfers that one item. Tiny fractional trackpad motion accumulates; it does not move a stack immediately. Other directions do nothing. Up to 64 items can be queued; excess input is ignored. Release Shift or move away to cancel pending requests. Unstarted work expires after 200 ms without input; an active batch safely completes or returns its cursor.
+- Hold **Shift + scroll DOWN over your inventory/hotbar** to deposit a proportional quantity, or **Shift + scroll UP over the container** to withdraw. By default, one effective wheel unit requests 2 items. Fractional input accumulates, and a one-item source or remaining capacity still transfers that one item. Tiny fractional trackpad motion accumulates; it does not move a stack immediately. The opposite direction in the original source inventory returns the remembered transfer, even over an unrelated or empty slot after releasing Shift. Up to 64 items can be queued; excess input is ignored. Release Shift or move away to cancel pending requests. Unstarted work expires after 200 ms without input; an active batch safely completes or returns its cursor.
 
-Wheel transfers, Deposit Matching, and Sort share one operation lock. Scroll sensitivity (`scrollItemsPerUnit`, default 2) is independent of its throughput (`scrollClicksPerTick`, default 4, maximum 5). Whole-stack requests use vanilla quick-move; partial quantities use half-stack pickup, capped merges, and single clicks only for exact remainders. A 32-item request from a 64-item stack into an empty destination takes two clicks instead of 96. Arbitrary quantities can take more clicks; server validation and tick pacing still apply. Other operations retain `clicksPerTick`. Search retains its text when unfocused and supports clicking back into it, caret positioning, selection, and native platform clipboard shortcuts.
+Wheel transfers, Deposit Matching, and Sort share one operation lock. Scroll sensitivity (`scrollItemsPerUnit`, default 2) is independent of its throughput (`scrollClicksPerTick`, default 4, maximum 5). Whole-stack requests use vanilla quick-move; partial quantities use half-stack pickup, capped merges, and single clicks only for exact remainders. A 32-item request from a 64-item stack into an empty destination takes two clicks instead of 96. Arbitrary quantities can take more clicks; server validation and tick pacing still apply. Deposit Matching retains `clicksPerTick`; sorting has its own `sortClicksPerTick` budget. Search retains its text when unfocused and supports clicking back into it, caret positioning, selection, and native platform clipboard shortcuts.
+
+### Remembered returns and player sorting
+
+- After a deposit, **Shift + scroll UP anywhere in the player storage/hotbar area** returns the remembered item. After a withdrawal, **Shift + scroll DOWN in the container area** returns it. Two items per wheel unit remains the default, including fractional accumulation and one-item remainders.
+- History stores only actual predicted vanilla transfers, with exact item/components and a net quantity. Opposite input discards queued/unplaced work first, safely recovers any owned cursor, and then returns completed items. Releasing Shift or changing source slots stops pending work but retains history. Closing/changing containers clears it.
+- Returns prefer the original source slot, then compatible partials and eligible empty slots in that inventory. Donors are resolved from the live layout, so sorting does not redirect a return to the wrong item. New forward movement of another item/direction replaces history; compatible movement in the same direction accumulates. Unexpected matching-item total changes invalidate the balance. History is a convenience, not a transaction log or a server acknowledgement.
+- The **person/order icon beside player storage** sorts only main slots 9–35. Its shared mode icon selects Alphabetical or By Type, including when only the normal survival inventory is open. Conflicting operations and bundle extraction share the same lock; clicking the running sort icon cancels safely.
+- Both sorts default to four validated clicks per tick (configurable 1–5), with a two-tick settling counter and a final verification. The planner avoids dismantling future slots already at their target when unfinished donors can supply the items. One pure-model fixture drops from six clicks to four; this is not a general in-game speed benchmark. Full inventories, component variants, bundles, and correction safeguards continue to use the shared planner.
 
 Configurations without `scrollSensitivityVersion` migrate the previous default value of 8 to 2. Other legacy custom values are preserved; a legacy custom value of exactly 8 cannot be distinguished from the old default. Versioned settings, including a customized 8, retain their values.
 
@@ -166,7 +176,7 @@ The normalised query is matched as a substring of each chest stack's displayed n
 
 ### Automated (run on every build)
 
-`./gradlew test` – 45 JUnit 5 tests over the pure logic, including a 600-case randomized sort fuzz (single and double chests, full and partly empty, mixed stack sizes, unstackables with differing components, bundles) that checks: termination within a click bound, no no-op clicks, no bundle-vs-occupied click, item totals unchanged, cursor empty at the end, final layout equal to the target; plus deposit candidate/room rules, category precedence, search matching, ordering determinism, fractional scrolling, bounded queues, and restriction-aware batch destination planning.
+`./gradlew test` – 50 JUnit 5 tests over the pure logic, including a 600-case randomized sort fuzz (single and double chests, full and partly empty, mixed stack sizes, unstackables with differing components, bundles) that checks: termination within a click bound, no no-op clicks, no bundle-vs-occupied click, item totals unchanged, cursor empty at the end, final layout equal to the target; plus deposit candidate/room rules, category precedence, search matching, ordering determinism, fractional scrolling, bounded queues, and restriction-aware batch destination planning.
 
 What the automated tests **do not** cover: anything that needs the game (rendering, input routing, real server validation, timing).
 

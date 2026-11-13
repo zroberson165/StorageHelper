@@ -5,6 +5,8 @@ import com.storagehelper.StorageHelperClient;
 import com.storagehelper.chest.op.DepositOperation;
 import com.storagehelper.chest.op.SortOperation;
 import com.storagehelper.chest.op.ScrollTransferOperation;
+import com.storagehelper.chest.op.RememberedReturnOperation;
+import com.storagehelper.gui.InventoryAreas;
 import com.storagehelper.logic.ScrollAccumulator;
 import com.storagehelper.logic.ControlLayout;
 import com.storagehelper.gui.IconButton;
@@ -55,6 +57,7 @@ public final class ChestSession {
 
 	private @Nullable IconButton depositButton;
 	private @Nullable IconButton sortButton;
+    private @Nullable IconButton playerSortButton;
 	private @Nullable IconButton modeButton;
 	private @Nullable EditBox searchBox;
 	private @Nullable IconButton clearButton;
@@ -66,12 +69,20 @@ public final class ChestSession {
 	private @Nullable ChestOperation operation;
 	private boolean closed;
 	private final ScrollAccumulator scroll = new ScrollAccumulator();
+    private final ScrollAccumulator returnScroll = new ScrollAccumulator();
+    private final boolean containerSupported;
+    private final TransferHistory history;
+    private int pendingReturn;
+    private record DeferredForward(int source, boolean deposit, int count, ItemStack identity) {}
+    private DeferredForward deferredForward;
 
 	ChestSession(Minecraft mc, AbstractContainerScreen<?> screen, StorageHelperConfig config) {
 		this.mc = mc;
 		this.screen = screen;
 		this.menu = screen.getMenu();
 		this.config = config;
+        containerSupported = ChestDetector.isChestScreen(screen);
+        history = new TransferHistory(menu);
 	}
 
 	public AbstractContainerScreen<?> screen() {
@@ -107,6 +118,7 @@ public final class ChestSession {
 		// A running operation simply stops issuing clicks. Anything still on the cursor is
 		// handled by vanilla's container-close logic (returned to the inventory).
 		operation = null;
+        history.clear(); pendingReturn = 0; deferredForward = null;
 		ChestSessions.clear(this);
 	}
 
@@ -117,15 +129,31 @@ public final class ChestSession {
 		LocalPlayer player = mc.player;
 		if (player == null || player.containerMenu != menu) {
 			operation = null;
+            history.clear(); pendingReturn = 0; deferredForward = null;
 			return;
 		}
 		refreshMatches();
-        var hovered = ScreenSlots.at(screen, mc.mouseHandler.getScaledXPos(mc.getWindow()), mc.mouseHandler.getScaledYPos(mc.getWindow()));
-        if (!ScreenSlots.shiftDown() || hovered == null || hovered.index != scroll.source() || isSearchFocused()
-                || HoverContents.pointerInside(screen)) {
+        double mx = mc.mouseHandler.getScaledXPos(mc.getWindow()), my = mc.mouseHandler.getScaledYPos(mc.getWindow());
+        var hovered = ScreenSlots.at(screen, mx, my);
+        boolean editing = isSearchFocused() || HoverContents.pointerInside(screen);
+        boolean shift = ScreenSlots.shiftDown();
+        if (!shift || editing || hovered == null || hovered.index != scroll.source()) {
             scroll.reset();
             if (operation instanceof ScrollTransferOperation transfer) transfer.requestCancel();
         }
+        if (!shift || editing || !containerSupported || !InventoryAreas.contains(screen, history, history.deposit(), mx, my)) {
+            returnScroll.reset(); pendingReturn = 0;
+            if (operation instanceof RememberedReturnOperation reverse) reverse.requestCancel();
+        }
+        if (deferredForward != null && (!shift || editing || hovered == null || hovered.index != deferredForward.source())) deferredForward = null;
+        boolean cursorPlayer = operation instanceof SortOperation sort ? sort.sortsPlayerInventory()
+                : operation instanceof ScrollTransferOperation transfer ? transfer.cursorInPlayer()
+                : operation instanceof RememberedReturnOperation reverse && reverse.cursorInPlayer();
+        if (containerSupported && history.hasIdentity() && !history.validate(cursorPlayer)) {
+            pendingReturn = 0;
+            if (operation instanceof RememberedReturnOperation reverse) reverse.requestCancel();
+        }
+
 		if (operation != null) {
 			operation.tick();
 			if (operation.isFinished()) {
@@ -134,6 +162,17 @@ public final class ChestSession {
 				updateButtons();
 			}
 		}
+        if (operation == null && menu.getCarried().isEmpty() && shift && !editing) {
+            if (pendingReturn > 0) {
+                int count = pendingReturn; pendingReturn = 0;
+                startReturn(count);
+            } else if (deferredForward != null) {
+                var request = deferredForward; deferredForward = null;
+                var live = menu.getSlot(request.source()).getItem();
+                if (!live.isEmpty() && ItemStack.isSameItemSameComponents(live, request.identity()))
+                    startForward(request.source(), request.deposit(), request.count());
+            }
+        }
 	}
 
 	// ---------------------------------------------------------------- widgets
@@ -146,6 +185,18 @@ public final class ChestSession {
         var l = ControlLayout.place(screen.width, screen.height, acc.storagehelper$getLeftPos(),
                 acc.storagehelper$getTopPos(), acc.storagehelper$getImageWidth());
         Font font = mc.font;
+        var playerRegion = InventoryRegion.playerMain(menu, mc.player.getInventory());
+        int playerY = playerRegion.slots().stream().mapToInt(i -> menu.getSlot(i).y).min().orElse(84) + acc.storagehelper$getTopPos();
+        int playerX = acc.storagehelper$getLeftPos() + acc.storagehelper$getImageWidth() + 4;
+        if (playerX + 20 > screen.width - 2) playerX = Math.max(2, acc.storagehelper$getLeftPos() - 24);
+        playerY = Math.max(2, Math.min(playerY, screen.height - 46));
+        playerSortButton = new IconButton(playerX, playerY, Component.translatable("storagehelper.button.player_sort"),
+                IconButton.Icon.PLAYER_SORT, b -> onPlayerSortPressed());
+        if (!containerSupported) {
+            modeButton = new IconButton(playerX, playerY + 22, Component.empty(), IconButton.Icon.ALPHABETICAL,
+                    b -> { config.setSortMode(config.sortMode().next()); updateButtons(); });
+            ourWidgets.addAll(List.of(playerSortButton, modeButton)); widgets.addAll(ourWidgets); updateButtons(); return;
+        }
         int tx = l.toolsX();
         depositButton = new IconButton(tx, l.toolsY(), Component.translatable("storagehelper.button.deposit"),
                 IconButton.Icon.DEPOSIT, b -> onDepositPressed());
@@ -165,31 +216,40 @@ public final class ChestSession {
         clearButton = new IconButton(l.searchX() + l.searchWidth() - 20, l.searchY(),
                 Component.translatable("storagehelper.search.clear"), IconButton.Icon.CLEAR, b -> clearSearch());
         clearButton.setTooltip(Tooltip.create(Component.translatable("storagehelper.search.clear")));
-        matchLabel = new StringWidget(l.toolsX(), l.toolsY() + 68, l.toolsWidth(), 10, Component.empty(), font);
-        ourWidgets.addAll(List.of(depositButton, sortButton, modeButton, searchBox, clearButton, matchLabel));
+        matchLabel = new StringWidget(l.toolsX(), Math.min(l.toolsY() + 68, playerY - 12), l.toolsWidth(), 10, Component.empty(), font);
+        ourWidgets.addAll(List.of(depositButton, sortButton, modeButton, searchBox, clearButton, matchLabel, playerSortButton));
         widgets.addAll(ourWidgets);
         updateButtons();
         updateMatchLabel();
     }
 
 	private void updateButtons() {
-		if (depositButton == null || sortButton == null || modeButton == null) {
-			return;
-		}
+        if (modeButton == null || playerSortButton == null) return;
         boolean idle = operation == null;
-        boolean depositing = operation instanceof DepositOperation, sorting = operation instanceof SortOperation;
+        boolean depositing = operation instanceof DepositOperation;
+        boolean sorting = operation instanceof SortOperation sort && !sort.sortsPlayerInventory();
+        boolean playerSorting = operation instanceof SortOperation sort && sort.sortsPlayerInventory();
         Component cancel = Component.translatable("storagehelper.button.cancel");
-        depositButton.active = idle || depositing;
-        depositButton.setMessage(depositing ? cancel : Component.translatable("storagehelper.button.deposit"));
-        depositButton.setIcon(depositing ? IconButton.Icon.CANCEL : IconButton.Icon.DEPOSIT);
-        depositButton.setTooltip(Tooltip.create(depositing ? Component.translatable("storagehelper.button.cancel.tooltip")
-                : Component.translatable("storagehelper.button.deposit").append("\n").append(Component.translatable("storagehelper.button.deposit.tooltip"))));
-        sortButton.active = idle || sorting;
-        sortButton.setMessage(sorting ? cancel : Component.translatable("storagehelper.button.sort"));
-        sortButton.setIcon(sorting ? IconButton.Icon.CANCEL : IconButton.Icon.SORT);
+        if (depositButton != null) {
+            depositButton.active = idle || depositing;
+            depositButton.setMessage(depositing ? cancel : Component.translatable("storagehelper.button.deposit"));
+            depositButton.setIcon(depositing ? IconButton.Icon.CANCEL : IconButton.Icon.DEPOSIT);
+            depositButton.setTooltip(Tooltip.create(depositing ? Component.translatable("storagehelper.button.cancel.tooltip")
+                    : Component.translatable("storagehelper.button.deposit").append("\n").append(Component.translatable("storagehelper.button.deposit.tooltip"))));
+        }
+        if (sortButton != null) {
+            sortButton.active = idle || sorting;
+            sortButton.setMessage(sorting ? cancel : Component.translatable("storagehelper.button.sort"));
+            sortButton.setIcon(sorting ? IconButton.Icon.CANCEL : IconButton.Icon.SORT);
+            sortButton.setTooltip(Tooltip.create(sorting ? Component.translatable("storagehelper.button.cancel.tooltip")
+                    : Component.translatable("storagehelper.button.sort").append("\n").append(Component.translatable("storagehelper.button.sort.tooltip"))));
+        }
+        playerSortButton.active = idle || playerSorting;
+        playerSortButton.setMessage(playerSorting ? cancel : Component.translatable("storagehelper.button.player_sort"));
+        playerSortButton.setIcon(playerSorting ? IconButton.Icon.CANCEL : IconButton.Icon.PLAYER_SORT);
+        playerSortButton.setTooltip(Tooltip.create(playerSorting ? Component.translatable("storagehelper.button.cancel.tooltip")
+                : Component.translatable("storagehelper.button.player_sort.tooltip")));
         Component mode = Component.translatable("storagehelper.sortmode." + config.sortMode().id());
-        sortButton.setTooltip(Tooltip.create(sorting ? Component.translatable("storagehelper.button.cancel.tooltip")
-                : Component.translatable("storagehelper.button.sort").append("\n").append(Component.translatable("storagehelper.button.sort.tooltip"))));
         modeButton.active = idle;
         modeButton.setMessage(Component.translatable("storagehelper.sortmode.current", mode));
         modeButton.setIcon(config.sortMode() == SortMode.ALPHABETICAL ? IconButton.Icon.ALPHABETICAL : IconButton.Icon.CATEGORY);
@@ -222,11 +282,20 @@ public final class ChestSession {
 			}
 			return;
 		}
-		startOperation(new SortOperation(mc, menu, config.clicksPerTick(), config.sortMode().comparator()));
+		startOperation(new SortOperation(mc, menu, config.sortClicksPerTick(), config.sortMode().comparator()));
 	}
 
+    private void onPlayerSortPressed() {
+        if (operation != null) {
+            if (operation instanceof SortOperation sort && sort.sortsPlayerInventory()) sort.requestCancel();
+            return;
+        }
+        startOperation(new SortOperation(mc, InventoryRegion.playerMain(menu, mc.player.getInventory()), config.sortClicksPerTick(), config.sortMode().comparator()));
+    }
+
 	private void startOperation(ChestOperation op) {
-		unfocusSearch();
+        pendingReturn = 0; deferredForward = null;
+			unfocusSearch();
 		op.start();
 		if (op.isFinished()) {
 			logResult(op);
@@ -264,31 +333,62 @@ public final class ChestSession {
 
     public boolean isSearchFocused() { return searchBox != null && searchBox.isFocused(); }
 
+    private void startForward(int slot, boolean deposit, int count) {
+        if (count <= 0 || !menu.getCarried().isEmpty()) return;
+        history.begin(menu.getSlot(slot).getItem(), deposit, slot);
+        startOperation(new ScrollTransferOperation(mc, menu, slot, deposit, count, config.scrollClicksPerTick(), history, false, -1));
+    }
+    private void startReturn(int count) {
+        if (count > 0 && history.quantity() > 0 && history.validate(false))
+            startOperation(new RememberedReturnOperation(mc, menu, history, Math.min(count, history.quantity()), config.scrollClicksPerTick()));
+    }
     public boolean onScroll(double x, double y, double delta) {
-        if (!ScreenSlots.shiftDown()) { scroll.reset(); return false; }
-        if (isSearchFocused()) { scroll.reset(); return true; }
+        if (!containerSupported) return false;
+        if (!ScreenSlots.shiftDown()) { scroll.reset(); returnScroll.reset(); return false; }
+        if (isSearchFocused() || !Double.isFinite(delta) || delta == 0) return true;
         for (AbstractWidget widget : ourWidgets) if (widget.isMouseOver(x, y)) { scroll.reset(); return true; }
+        boolean playerArea = InventoryAreas.contains(screen, history, true, x, y);
+        boolean containerArea = InventoryAreas.contains(screen, history, false, x, y);
+        if (!playerArea && !containerArea) { scroll.reset(); returnScroll.reset(); return true; }
+        boolean forward = playerArea ? delta < 0 : delta > 0;
+        if (!forward) {
+            scroll.reset(); deferredForward = null;
+            if (!history.hasIdentity() || history.deposit() != playerArea) return true;
+            int count = returnScroll.add(playerArea ? -2 : -3, delta, System.currentTimeMillis(), config.scrollItemsPerUnit());
+            if (operation instanceof ScrollTransferOperation transfer) {
+                count = transfer.cancelForReverse(count);
+                pendingReturn = Math.min(ScrollAccumulator.MAX_BACKLOG, pendingReturn + count);
+            } else if (operation instanceof RememberedReturnOperation reverse) reverse.enqueue(count);
+            else if (operation == null) startReturn(count);
+            return true;
+        }
+        returnScroll.reset(); pendingReturn = 0;
         var source = ScreenSlots.at(screen, x, y);
-        if (source == null) { scroll.reset(); return true; }
-        int boundary = ChestSnapshots.chestSlotCount(menu);
-        boolean playerSource = source.index >= boundary;
-        if ((playerSource && delta <= 0) || (!playerSource && delta >= 0)) {
-            scroll.reset();
-            if (operation instanceof ScrollTransferOperation transfer) transfer.requestCancel();
-            return true;
-        }
-        if (operation instanceof ScrollTransferOperation transfer) {
-            if (transfer.source() == source.index) transfer.enqueue(scroll.add(source.index, delta, System.currentTimeMillis(), config.scrollItemsPerUnit()));
-            else { transfer.requestCancel(); scroll.reset(); }
-            return true;
-        }
-        if (operation != null || !menu.getCarried().isEmpty() || !source.hasItem()) { scroll.reset(); return true; }
+        if (source == null) { if (operation != null) operation.requestCancel(); return true; }
         int count = scroll.add(source.index, delta, System.currentTimeMillis(), config.scrollItemsPerUnit());
-        if (count > 0) startOperation(new ScrollTransferOperation(mc, menu, source.index, playerSource, count, config.scrollClicksPerTick()));
+        if (operation instanceof ScrollTransferOperation transfer && !transfer.isCancelling()
+                && transfer.source() == source.index && transfer.cursorInPlayer() == playerArea) {
+            transfer.enqueue(count); return true;
+        }
+        if (operation != null) {
+            if (operation instanceof ScrollTransferOperation || operation instanceof RememberedReturnOperation) {
+                operation.requestCancel();
+                ItemStack item = source.hasItem() ? source.getItem() : history.prototype();
+                if (!item.isEmpty() && count > 0) {
+                    int queued = deferredForward != null && deferredForward.source() == source.index
+                            && deferredForward.deposit() == playerArea && ItemStack.isSameItemSameComponents(deferredForward.identity(), item)
+                            ? deferredForward.count() : 0;
+                    deferredForward = new DeferredForward(source.index, playerArea, Math.min(ScrollAccumulator.MAX_BACKLOG, queued + count), item.copyWithCount(1));
+                }
+            }
+            return true;
+        }
+        if (source.hasItem()) startForward(source.index, playerArea, count);
         return true;
     }
 
 	private void refreshMatches() {
+        if (!containerSupported) return;
 		int n = ChestSnapshots.chestSlotCount(menu);
 		if (matches.length != n) {
 			matches = new boolean[n];

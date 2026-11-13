@@ -26,6 +26,8 @@ public final class StorageHelperConfig {
 	public String sortMode = SortMode.ALPHABETICAL.id();
 	/** Inventory clicks sent per client tick while an operation runs (1-5). */
 	public int clicksPerTick = 1;
+    /** Separate sort throughput for both container and main-inventory sorting. */
+    public int sortClicksPerTick = 4;
     /** Requested items per effective wheel unit, independent of click throughput. */
     public double scrollItemsPerUnit = ScrollSettings.DEFAULT_ITEMS_PER_UNIT;
     public int scrollSensitivityVersion = 1;
@@ -83,11 +85,13 @@ public final class StorageHelperConfig {
     public double scrollItemsPerUnit() {
         return ScrollSettings.resolve(scrollItemsPerUnit, false);
     }
+    public int sortClicksPerTick() { return Math.max(1, Math.min(5, sortClicksPerTick)); }
     public int scrollClicksPerTick() { return Math.max(1, Math.min(5, scrollClicksPerTick)); }
 
 	private void sanitize() {
 		sortMode = sortMode().id();
 		clicksPerTick = clicksPerTick();
+        sortClicksPerTick = sortClicksPerTick();
         scrollItemsPerUnit = scrollItemsPerUnit();
         scrollClicksPerTick = scrollClicksPerTick();
 	}

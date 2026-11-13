@@ -2,6 +2,7 @@ package com.storagehelper.chest.op;
 
 import com.storagehelper.chest.ChestSnapshots;
 import com.storagehelper.chest.McStackType;
+import com.storagehelper.chest.TransferHistory;
 import com.storagehelper.logic.BatchTransferPlanner;
 import com.storagehelper.logic.ScrollAccumulator;
 import com.storagehelper.logic.TransferRequests;
@@ -28,9 +29,18 @@ public final class ScrollTransferOperation extends ChestOperation {
     private int activeRemaining;
     private long lastInput;
     private int recoveryTicks;
+    private final TransferHistory history;
+    private final boolean reversal;
+    private final int preferred;
+    private int completed;
 
     public ScrollTransferOperation(Minecraft mc, AbstractContainerMenu menu, int source, boolean intoContainer, int count, int pacing) {
+        this(mc, menu, source, intoContainer, count, pacing, null, false, -1);
+    }
+    public ScrollTransferOperation(Minecraft mc, AbstractContainerMenu menu, int source, boolean intoContainer, int count, int pacing,
+                                   TransferHistory history, boolean reversal, int preferred) {
         super(mc, menu, pacing);
+        this.history = history; this.reversal = reversal; this.preferred = preferred;
         this.source = source;
         this.intoContainer = intoContainer;
         original = menu.getSlot(source).getItem().copy();
@@ -39,6 +49,18 @@ public final class ScrollTransferOperation extends ChestOperation {
         for (int i = intoContainer ? 0 : boundary; i < (intoContainer ? boundary : menu.slots.size()); i++) destinations.add(i);
     }
     public int source() { return source; }
+    public boolean cursorInPlayer() { return intoContainer; }
+    public int completed() { return completed; }
+    public boolean isCancelling() { return cancelRequested; }
+    /** Stop pending and unplaced work before any remembered completed items are reversed. */
+    public int cancelForReverse(int requested) {
+        requests.clear(); activeRemaining = 0; requestCancel();
+        return requested;
+    }
+    private void transferred(int count) {
+        completed += count;
+        if (history != null) history.completed(count, reversal);
+    }
     public void enqueue(int count) {
         if (!cancelRequested) { requests.add(count); lastInput = System.currentTimeMillis(); }
     }
@@ -51,6 +73,7 @@ public final class ScrollTransferOperation extends ChestOperation {
     private void remember() {
         expectedSlots = menu.slots.stream().map(slot -> slot.getItem().copy()).toList();
         expectedCursor = menu.getCarried().copy();
+        if (history != null && !history.validate(intoContainer)) cancelRequested = true;
     }
     private boolean unchanged() {
         if (!ItemStack.matches(expectedCursor, menu.getCarried())) return false;
@@ -60,6 +83,12 @@ public final class ScrollTransferOperation extends ChestOperation {
     }
     private int destination(ItemStack stack) {
         List<Stack> slots = destinations.stream().map(i -> ChestSnapshots.toStack(menu.getSlot(i).getItem())).toList();
+        if (preferred >= 0 && destinations.contains(preferred)) {
+            var slot = menu.getSlot(preferred);
+            var in = slot.getItem();
+            if (slot.mayPlace(stack) && (in.isEmpty() || !McStackType.of(stack).fragile() && !McStackType.of(in).fragile()
+                    && ItemStack.isSameItemSameComponents(stack, in)) && in.getCount() < slot.getMaxStackSize(stack)) return preferred;
+        }
         int index = SingleItemTransferPlanner.destination(slots, ChestSnapshots.toStack(stack),
                 i -> menu.getSlot(destinations.get(i)).mayPlace(stack),
                 i -> menu.getSlot(destinations.get(i)).getMaxStackSize(stack));
@@ -67,7 +96,8 @@ public final class ScrollTransferOperation extends ChestOperation {
     }
     @Override public void tick() {
         if (mc.player == null || mc.player.containerMenu != menu) { finish(t("status.closed")); return; }
-        if (cancelRequested || !unchanged()) { cancelRequested = true; recover(); return; }
+        if (!unchanged()) { if (history != null) history.clear(); cancelRequested = true; }
+        if (cancelRequested) { recover(); return; }
         if (System.currentTimeMillis() - lastInput > ScrollAccumulator.GESTURE_MS) requests.clear();
         for (int clicks = 0; clicks < clicksPerTick; clicks++) {
             var from = menu.getSlot(source);
@@ -83,14 +113,15 @@ public final class ScrollTransferOperation extends ChestOperation {
                 }
                 if (destination(live) < 0) { finish(t("scroll.full")); return; }
                 int before = live.getCount();
-                if (activeRemaining >= before) {
+                if (activeRemaining >= before && !reversal) {
                     // Vanilla QUICK_MOVE fills partial stacks before empty slots, without a cursor.
                     if (!click(source, 0, ContainerInput.QUICK_MOVE)) return;
                     int moved = before - from.getItem().getCount();
                     if (moved <= 0 || moved > activeRemaining) { cancelRequested = true; return; }
                     activeRemaining -= moved;
+                    transferred(moved);
                 } else {
-                    if (McStackType.of(live).fragile()) { finish(t("status.stopped")); return; }
+                    if (McStackType.of(live).fragile() && live.getCount() != 1) { finish(t("status.stopped")); return; }
                     int button = BatchTransferPlanner.pickupButton(before, activeRemaining);
                     if (!click(source, button, ContainerInput.PICKUP)) return;
                     int expected = button == 1 ? (before + 1) / 2 : before;
@@ -129,7 +160,7 @@ public final class ScrollTransferOperation extends ChestOperation {
                     if (!click(slot, button, ContainerInput.PICKUP)) return;
                     int moved = before - menu.getCarried().getCount();
                     if (moved != expected) { cancelRequested = true; return; }
-                    if (slot != source) activeRemaining -= moved;
+                    if (slot != source) { activeRemaining -= moved; transferred(moved); }
                 }
             }
             remember();
@@ -152,6 +183,6 @@ public final class ScrollTransferOperation extends ChestOperation {
         int index = SingleItemTransferPlanner.destination(slots, ChestSnapshots.toStack(cursor),
                 i -> menu.getSlot(home.get(i)).mayPlace(cursor), i -> menu.getSlot(home.get(i)).getMaxStackSize(cursor));
         if (index < 0) { finish(t("status.stopped_holding")); return; }
-        click(home.get(index), 0, ContainerInput.PICKUP);
+        if (click(home.get(index), 0, ContainerInput.PICKUP)) remember();
     }
 }

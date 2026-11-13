@@ -22,7 +22,7 @@ public final class ChestSessions {
 			current.rebuildWidgets(); // resize: vanilla cleared the widgets, add ours again
 			return;
 		}
-		if (!ChestDetector.isChestScreen(containerScreen)) {
+		if (!ChestDetector.isChestScreen(containerScreen) && !(screen instanceof net.minecraft.client.gui.screens.inventory.InventoryScreen)) {
 			return;
 		}
 		if (current != null) {

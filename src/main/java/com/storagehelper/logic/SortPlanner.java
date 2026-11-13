@@ -173,7 +173,7 @@ public final class SortPlanner {
 				return Step.click(p);
 			}
 			// Cursor holds a foreign stack: swap it into a donor slot of t's type ...
-			int q = findDonor(slots, p, t, haveHere);
+			int q = findDonor(slots, p, t, haveHere, target);
 			if (q < 0) {
 				return Step.STALE;
 			}
@@ -186,7 +186,7 @@ public final class SortPlanner {
 		}
 
 		// Empty cursor: pick up a donor for t.
-		int q = findDonor(slots, p, t, haveHere);
+		int q = findDonor(slots, p, t, haveHere, target);
 		if (q < 0) {
 			return Step.STALE;
 		}
@@ -273,25 +273,21 @@ public final class SortPlanner {
 	 * exactly what position {@code p} still needs (one click finishes it), otherwise the
 	 * largest donor.
 	 */
-	private static int findDonor(List<Stack> slots, int p, Stack t, int haveHere) {
-		int need = t.count() - haveHere;
-		int best = -1;
-		int bestCount = -1;
-		for (int q = p + 1; q < slots.size(); q++) {
-			Stack c = slots.get(q);
-			if (c == null || !c.sameType(t)) {
-				continue;
-			}
-			if (c.count() == need) {
-				return q;
-			}
-			if (c.count() > bestCount) {
-				best = q;
-				bestCount = c.count();
-			}
-		}
-		return best;
-	}
+    private static int findDonor(List<Stack> slots, int p, Stack t, int haveHere, List<Stack> target) {
+        int need = t.count() - haveHere;
+        // Prefer unfinished donors so already-final stacks are not needlessly dismantled.
+        for (int pass = 0; pass < 2; pass++) {
+            int best = -1, bestCount = -1;
+            for (int q = p + 1; q < slots.size(); q++) {
+                Stack c = slots.get(q);
+                if (c == null || !c.sameType(t) || pass == 0 && Stack.same(c, target.get(q))) continue;
+                if (c.count() == need) return q;
+                if (c.count() > bestCount) { best = q; bestCount = c.count(); }
+            }
+            if (best >= 0) return best;
+        }
+        return -1;
+    }
 
 	/**
 	 * When an operation is being cancelled with a stack still on the cursor, choose a chest

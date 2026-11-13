@@ -7,7 +7,7 @@ import net.minecraft.network.chat.Component;
 
 /** Native button hitboxes, focus, tooltip and narration with game-rendered pixel icons. */
 public final class IconButton extends Button {
-    public enum Icon { DEPOSIT, SORT, ALPHABETICAL, CATEGORY, CLEAR, CANCEL }
+    public enum Icon { DEPOSIT, SORT, PLAYER_SORT, ALPHABETICAL, CATEGORY, CLEAR, CANCEL }
     private Icon icon;
     public IconButton(int x, int y, Component label, Icon icon, OnPress press) {
         super(x, y, 20, 20, label, press, DEFAULT_NARRATION);
@@ -31,6 +31,10 @@ public final class IconButton extends Button {
                 for (int i = 0; i < 3; i++) rect(g, ox, oy, 1, 1 + i * 4, 4 + i * 2, 2, color);
                 rect(g, ox, oy, 11, 1, 1, 9, color);
                 for (int i = 0; i < 3; i++) rect(g, ox, oy, 9 + i, 9 + i, 5 - i * 2, 1, color);
+            }
+            case PLAYER_SORT -> {
+                rect(g,ox,oy,1,1,4,4,color); rect(g,ox,oy,0,6,6,7,color);
+                for (int i=0;i<3;i++) rect(g,ox,oy,8,2+i*4,5-i,2,color);
             }
             case ALPHABETICAL -> {
                 pixels(g, ox, oy, 0, 0, new String[]{"010", "101", "111", "101", "101"}, color);

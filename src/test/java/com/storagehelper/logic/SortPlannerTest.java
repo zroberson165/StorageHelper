@@ -104,6 +104,23 @@ class SortPlannerTest {
 		return new Stack(t, n);
 	}
 
+    @Test void doesNotDismantleAnAlreadyCorrectFullStackToRebuildItLater() {
+        var type = FakeType.item("apple",64);
+        var slots = java.util.Arrays.asList((Stack)null, new Stack(type,64),new Stack(type,32),new Stack(type,32));
+        var target = SortPlanner.computeTarget(slots,null,SortMode.ALPHABETICAL.comparator());
+        var state = new ClickSimulator.State(slots,null);
+        int clicks = 0;
+        while (true) {
+            var step = SortPlanner.nextStep(state.slots,state.cursor,target);
+            if (step.result() == SortPlanner.Result.DONE) break;
+            org.junit.jupiter.api.Assertions.assertEquals(SortPlanner.Result.CLICK,step.result());
+            org.junit.jupiter.api.Assertions.assertTrue(ClickSimulator.leftClick(state,step.slot()));
+            org.junit.jupiter.api.Assertions.assertTrue(++clicks < 20);
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(4,clicks); // Previous donor choice took six.
+        org.junit.jupiter.api.Assertions.assertNull(state.cursor);
+    }
+
 	@Test
 	void consolidatesPartialStacksAndPacksLeft() {
 		List<Stack> start = chest(27, null, s(COBBLE, 40), null, s(DIRT, 10), s(COBBLE, 40), null, s(DIRT, 5));
